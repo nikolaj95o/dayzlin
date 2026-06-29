@@ -1,6 +1,7 @@
 //! dayz-core: UI-agnostic domain logic for the dayzlin DayZ launcher.
 
 pub mod error;
+pub mod mods;
 pub mod process;
 pub mod servers;
 pub mod steam;

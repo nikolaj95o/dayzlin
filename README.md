@@ -80,6 +80,16 @@ When running inside Flatpak, Steam/SteamCMD calls are routed through
 3. Wire up the remaining UI: record history on launch, add/remove favorites,
    surface error states (login expiry, anonymous account, Steam not found).
 
+## Acknowledgements
+
+dayzlin builds on the knowledge and approach of existing Linux DayZ tooling:
+
+- [dayz-ctl](https://github.com/WoozyMasta/dayz-ctl) by WoozyMasta — a DayZ
+  launcher whose workflow (SteamCMD mod handling, mod symlinking, Proton launch
+  invocation) informed dayzlin's design.
+- [dayzsalauncher](https://dayzsalauncher.com/) — dayzlin uses its public
+  server-list API as the source of community server data.
+
 ## License
 
 [GPL-3.0-or-later](LICENSE). You may use, study, modify, and share it; any

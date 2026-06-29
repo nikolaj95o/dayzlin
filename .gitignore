@@ -6,3 +6,5 @@ dist
 *.AppImage
 .flatpak-builder
 build-dir
+.idea
+.vscode

@@ -1,0 +1,57 @@
+# Flatpak manifest for dayzlin.
+#
+# Local test build (needs the runtime + SDK extensions installed first):
+#   flatpak install -y flathub org.gnome.Platform//47 org.gnome.Sdk//47 \
+#     org.freedesktop.Sdk.Extension.rust-stable//24.08 \
+#     org.freedesktop.Sdk.Extension.node22//24.08
+#   flatpak run org.flatpak.Builder --force-clean --user --install \
+#     build-dir flatpak/io.github.nikolaj95o.dayzlin.yml
+#   flatpak run io.github.nikolaj95o.dayzlin
+#
+# NOTE: this manifest builds with network access (build-args: --share=network),
+# which is fine for local/GitHub-release builds. A Flathub submission must instead
+# vendor sources offline (flatpak-cargo-generator + flatpak-node-generator) and
+# drop the --share=network. A .desktop file, icon, and AppStream metainfo are also
+# required for Flathub / desktop-menu integration (follow-up).
+id: io.github.nikolaj95o.dayzlin
+runtime: org.gnome.Platform
+runtime-version: "47"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node22
+command: dayzlin
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # host-spawn Steam / SteamCMD / ping:
+  - --talk-name=org.freedesktop.Flatpak
+  # read/write the Steam library + workshop + game dirs (both install shapes):
+  - --filesystem=~/.steam:rw
+  - --filesystem=~/.local/share/Steam:rw
+  - --filesystem=~/.var/app/com.valvesoftware.Steam:rw
+modules:
+  - name: dayzlin
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin
+      build-args:
+        - --share=network
+    build-commands:
+      - npm ci
+      - npm run build
+      - cargo build --release -p dayzlin
+      - install -Dm755 target/release/dayzlin /app/bin/dayzlin
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - .git
+          - target
+          - node_modules
+          - dist
+          - build-dir
+          - .flatpak-builder

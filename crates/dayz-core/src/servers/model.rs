@@ -24,13 +24,11 @@ pub struct ServerMod {
 
 // ---- raw API shapes (decoupled from our domain model) ----
 
+// The live dayzsalauncher response is `{ "status": 0, "result": [ ...servers... ] }`
+// — `result` is the server array directly (confirmed via spike, Task 8 Step 5).
 #[derive(Deserialize)]
 struct RawResponse {
-    result: RawResult,
-}
-#[derive(Deserialize)]
-struct RawResult {
-    servers: Vec<RawServer>,
+    result: Vec<RawServer>,
 }
 #[derive(Deserialize)]
 struct RawServer {
@@ -65,7 +63,6 @@ pub fn parse_servers(json: &str) -> Result<Vec<Server>, Error> {
     let raw: RawResponse = serde_json::from_str(json).map_err(|e| Error::Parse(e.to_string()))?;
     Ok(raw
         .result
-        .servers
         .into_iter()
         .map(|r| Server {
             name: r.name,

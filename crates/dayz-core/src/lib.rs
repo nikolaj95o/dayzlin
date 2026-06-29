@@ -2,6 +2,7 @@
 
 pub mod error;
 pub mod process;
+pub mod servers;
 pub mod steam;
 
 pub use error::Error;

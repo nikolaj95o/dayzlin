@@ -1,0 +1,21 @@
+{
+  "result": {
+    "servers": [
+      {
+        "name": "Test Namalsk PVE",
+        "endpoint": { "ip": "1.2.3.4" },
+        "gamePort": 2302,
+        "players": 12,
+        "maxPlayers": 60,
+        "map": "namalsk",
+        "time": "12:00",
+        "firstPersonOnly": true,
+        "password": false,
+        "mods": [
+          { "name": "CF", "steamWorkshopId": 1559212036 },
+          { "name": "Namalsk Island", "steamWorkshopId": 2289456201 }
+        ]
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/dayz-core"]
+members = ["crates/dayz-core", "src-tauri"]
 
 [workspace.package]
 edition = "2021"

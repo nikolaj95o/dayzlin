@@ -47,9 +47,14 @@ npm ci
 # run in development (opens the app, hot-reloads the UI)
 npm run tauri dev
 
-# production build (AppImage + binary under target/release/)
+# production build (AppImage + deb + rpm + binary under target/release/)
 npm run tauri build
 ```
+
+> **Arch / CachyOS note:** the AppImage step can fail with
+> `strip: ... unknown type [0x13] section '.relr.dyn'` because the `strip`
+> bundled in `linuxdeploy` is older than the system toolchain. Build with
+> stripping disabled: `NO_STRIP=true npm run tauri build`.
 
 The Rust core library lives in `crates/dayz-core` (UI-agnostic, fully unit-tested
 behind a mockable command runner). The Tauri app crate is `src-tauri`; the Svelte

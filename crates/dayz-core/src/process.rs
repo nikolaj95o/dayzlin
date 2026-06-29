@@ -97,10 +97,10 @@ impl Default for MockRunner {
 #[async_trait]
 impl CommandRunner for MockRunner {
     async fn run(&self, program: &str, args: &[&str]) -> Result<Output, Error> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push((program.to_string(), args.iter().map(|s| s.to_string()).collect()));
+        self.calls.lock().unwrap().push((
+            program.to_string(),
+            args.iter().map(|s| s.to_string()).collect(),
+        ));
         let responses = self.responses.lock().unwrap();
         responses
             .iter()

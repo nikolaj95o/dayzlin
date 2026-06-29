@@ -10,6 +10,9 @@ pub async fn fetch_servers(client: &reqwest::Client) -> Result<Vec<Server>, Erro
         .send()
         .await
         .map_err(|e| Error::Network(e.to_string()))?;
-    let text = resp.text().await.map_err(|e| Error::Network(e.to_string()))?;
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| Error::Network(e.to_string()))?;
     parse_servers(&text)
 }

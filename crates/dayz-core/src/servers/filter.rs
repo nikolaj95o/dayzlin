@@ -38,7 +38,7 @@ pub fn fuzzy_search(servers: &[Server], query: &str) -> Vec<Server> {
         .iter()
         .filter_map(|s| matcher.fuzzy_match(&s.name, query).map(|score| (score, s)))
         .collect();
-    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored.sort_by_key(|&(score, _)| std::cmp::Reverse(score));
     scored.into_iter().map(|(_, s)| s.clone()).collect()
 }
 

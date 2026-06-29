@@ -63,11 +63,7 @@ pub fn missing_mods(required: &[ServerMod], installed: &[InstalledMod]) -> Vec<u
         .collect()
 }
 
-pub fn ensure_mod_symlinks(
-    game_dir: &Path,
-    workshop_dir: &Path,
-    ids: &[u64],
-) -> Result<(), Error> {
+pub fn ensure_mod_symlinks(game_dir: &Path, workshop_dir: &Path, ids: &[u64]) -> Result<(), Error> {
     for &id in ids {
         let src = workshop_dir.join(id.to_string());
         if !src.is_dir() {

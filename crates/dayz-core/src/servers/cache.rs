@@ -14,7 +14,9 @@ pub fn cache_write(path: &Path, servers: &[Server]) -> Result<(), Error> {
 
 pub fn cache_read(path: &Path, ttl_secs: u64) -> Option<Vec<Server>> {
     let meta = std::fs::metadata(path).ok()?;
-    let age = SystemTime::now().duration_since(meta.modified().ok()?).ok()?;
+    let age = SystemTime::now()
+        .duration_since(meta.modified().ok()?)
+        .ok()?;
     if age > Duration::from_secs(ttl_secs) {
         return None;
     }

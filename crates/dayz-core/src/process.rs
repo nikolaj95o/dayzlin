@@ -114,9 +114,96 @@ impl CommandRunner for MockRunner {
     }
 }
 
+/// Common Linux terminal emulators, in rough order of preference.
+pub const DEFAULT_TERMINALS: &[&str] = &[
+    "konsole",
+    "gnome-terminal",
+    "xfce4-terminal",
+    "alacritty",
+    "kitty",
+    "foot",
+    "xterm",
+];
+
+/// Return the first `candidates` program found on `PATH`, if any.
+pub fn detect_terminal(candidates: &[&str]) -> Option<String> {
+    let path = std::env::var_os("PATH")?;
+    for cand in candidates {
+        for dir in std::env::split_paths(&path) {
+            if dir.join(cand).is_file() {
+                return Some((*cand).to_string());
+            }
+        }
+    }
+    None
+}
+
+/// steamcmd arguments for a one-time interactive login: `+login <user> +quit`.
+pub fn steamcmd_login_argv(user: &str) -> Vec<String> {
+    vec!["+login".into(), user.into(), "+quit".into()]
+}
+
+/// Build `(program, args)` that opens `term` running an interactive steamcmd login.
+/// gnome-terminal needs `--` before the command; most others use `-e`.
+pub fn terminal_login_command(term: &str, user: &str) -> (String, Vec<String>) {
+    let sep = if term == "gnome-terminal" { "--" } else { "-e" };
+    let mut args = vec![sep.to_string(), "steamcmd".to_string()];
+    args.extend(steamcmd_login_argv(user));
+    (term.to_string(), args)
+}
+
+/// Spawn `program args` interactively (output not captured, not awaited).
+/// Honors the same sandbox/host-spawn decision as [`RealRunner`].
+pub fn spawn_detached(program: &str, args: &[String]) -> Result<(), Error> {
+    let (prog, full_args) = if is_sandboxed() {
+        let mut v = vec!["--host".to_string(), program.to_string()];
+        v.extend(args.iter().cloned());
+        ("flatpak-spawn".to_string(), v)
+    } else {
+        (program.to_string(), args.to_vec())
+    };
+    std::process::Command::new(&prog)
+        .args(&full_args)
+        .spawn()
+        .map(|_| ())
+        .map_err(Error::Io)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn steamcmd_login_argv_builds_login_quit() {
+        assert_eq!(
+            steamcmd_login_argv("alice"),
+            vec!["+login", "alice", "+quit"]
+        );
+    }
+
+    #[test]
+    fn terminal_login_command_uses_dash_e_for_konsole() {
+        let (prog, args) = terminal_login_command("konsole", "alice");
+        assert_eq!(prog, "konsole");
+        assert_eq!(args, vec!["-e", "steamcmd", "+login", "alice", "+quit"]);
+    }
+
+    #[test]
+    fn terminal_login_command_uses_double_dash_for_gnome_terminal() {
+        let (_prog, args) = terminal_login_command("gnome-terminal", "bob");
+        assert_eq!(args[0], "--");
+        assert_eq!(args[1], "steamcmd");
+    }
+
+    #[test]
+    fn detect_terminal_finds_present_and_skips_absent() {
+        // `sh` exists on any POSIX PATH; the bogus one does not.
+        assert_eq!(
+            detect_terminal(&["definitely-not-a-real-term-xyz", "sh"]),
+            Some("sh".into())
+        );
+        assert_eq!(detect_terminal(&["definitely-not-a-real-term-xyz"]), None);
+    }
 
     #[tokio::test]
     async fn mock_runner_returns_scripted_output() {

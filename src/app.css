@@ -98,6 +98,17 @@ nav button.active {
   color: var(--accent);
   font-size: 13px;
 }
+.settings hr {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+.settings .hint {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.45;
+}
 
 .refs {
   list-style: none;

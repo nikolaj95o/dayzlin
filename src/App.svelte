@@ -13,6 +13,8 @@
   import ServerTable from "./lib/ServerTable.svelte";
   import FilterPanel from "./lib/FilterPanel.svelte";
   import Settings from "./lib/Settings.svelte";
+  import MessageDialog from "./lib/MessageDialog.svelte";
+  import { showError } from "./lib/dialog";
 
   type View = "servers" | "favorites" | "history" | "settings";
 
@@ -37,7 +39,8 @@
       servers = await filterServers(filter, query);
       status = `${servers.length} servers`;
     } catch (e) {
-      status = `Error: ${e}`;
+      status = "";
+      showError(e);
     }
   }
 
@@ -46,7 +49,8 @@
       servers = await filterServers(filter, query);
       status = `${servers.length} servers`;
     } catch (e) {
-      status = `Error: ${e}`;
+      status = "";
+      showError(e);
     }
   }
 
@@ -56,7 +60,8 @@
       await play(s, s.password ? prompt("Server password") : null);
       status = "Launched";
     } catch (e) {
-      status = `Error: ${e}`;
+      status = "";
+      showError(e);
     }
   }
 
@@ -115,3 +120,5 @@
     </ul>
   {/if}
 </main>
+
+<MessageDialog />

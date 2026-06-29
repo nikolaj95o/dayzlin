@@ -96,18 +96,27 @@ pub async fn download_mod(runner: &dyn CommandRunner, login: &str, id: u64) -> R
         "validate",
         "+quit",
     ];
+    log::debug!("running steamcmd workshop_download_item {app} {id_s}");
     let out = runner.run("steamcmd", &args).await?;
     let combined = format!("{}{}", out.stdout, out.stderr);
     if combined.contains("FAILED login") || combined.contains("Invalid Password") {
-        return Err(Error::SteamCmdLogin);
+        log::warn!("steamcmd login failed for mod {id}: {combined}");
+        return Err(Error::SteamCmdLogin {
+            detail: combined.trim().to_string(),
+        });
     }
     if out.status != 0 {
+        log::warn!(
+            "steamcmd failed for mod {id} (status {}): {combined}",
+            out.status
+        );
         return Err(Error::CommandFailed {
             program: "steamcmd".into(),
             status: out.status,
             stderr: out.stderr,
         });
     }
+    log::debug!("steamcmd downloaded mod {id} successfully");
     Ok(())
 }
 
@@ -225,6 +234,11 @@ timestamp = 133000000;
             },
         );
         let err = download_mod(&runner, "user", 1).await.unwrap_err();
-        assert!(matches!(err, crate::Error::SteamCmdLogin));
+        match err {
+            crate::Error::SteamCmdLogin { detail } => {
+                assert!(detail.contains("Invalid Password"));
+            }
+            other => panic!("expected SteamCmdLogin, got {other:?}"),
+        }
     }
 }

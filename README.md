@@ -27,6 +27,23 @@ Built with Rust + Tauri and shipped as a self-contained Flatpak (AppImage fallba
 - **SteamCMD** available on the host (most distros package it) for mod installs.
 - A GPU/driver capable of running DayZ under Proton.
 
+## Steam setup (first time)
+
+Installing mods uses **SteamCMD**, which keeps its **own** login, separate from the
+Steam desktop client. Before your first mod install:
+
+1. Enter your Steam account name in **Settings → Steam login** and Save.
+2. Click **Set up Steam login** (or run `steamcmd +login <user> +quit` in a terminal).
+   Enter your password and Steam Guard code once — SteamCMD caches the session, so later
+   installs run non-interactively.
+3. **Close the Steam client** while dayzlin downloads mods. SteamCMD and the client share
+   the same Steam directory and will conflict otherwise.
+
+Notes:
+- The account must **own DayZ** — anonymous SteamCMD logins cannot download DayZ mods.
+- If a download later fails with a login error, repeat the one-time login above (Steam
+  Guard sessions can expire).
+
 ## Install
 
 > Packaged artifacts are not yet published. For now, build from source (below).

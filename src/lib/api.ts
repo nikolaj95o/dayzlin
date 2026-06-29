@@ -37,8 +37,15 @@ export interface Profile {
   history: ServerRef[];
 }
 
+export interface CommandError {
+  kind: string;
+  message: string;
+  detail: string | null;
+}
+
 export const listServers = (refresh: boolean) =>
   invoke<Server[]>("list_servers", { refresh });
+export const setupSteamLogin = () => invoke<void>("setup_steam_login");
 export const filterServers = (filter: ServerFilter, query: string) =>
   invoke<Server[]>("filter_servers", { filter, query });
 export const play = (server: Server, password: string | null) =>

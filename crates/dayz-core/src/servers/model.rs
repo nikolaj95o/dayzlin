@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use crate::error::Error;
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Server {
     pub name: String,
     pub ip: String,
@@ -16,7 +16,7 @@ pub struct Server {
     pub mods: Vec<ServerMod>,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ServerMod {
     pub name: String,
     pub workshop_id: u64,

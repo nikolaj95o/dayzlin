@@ -50,6 +50,80 @@ header {
   gap: 16px;
 }
 
+nav {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+nav button.active {
+  border-color: var(--accent-border);
+  color: var(--text-h);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 360px;
+  margin-top: 12px;
+}
+.settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-h);
+  font-size: 14px;
+}
+.settings input {
+  font: inherit;
+  color: var(--text-h);
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.settings .actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings .saved {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.refs {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.refs li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.refs .name {
+  color: var(--text-h);
+  font-weight: 500;
+}
+.refs .addr {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.refs .empty {
+  justify-content: center;
+  color: var(--text);
+}
+
 h1 {
   font-size: 28px;
   font-weight: 600;

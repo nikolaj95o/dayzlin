@@ -3,6 +3,7 @@
 pub mod error;
 pub mod mods;
 pub mod process;
+pub mod profile;
 pub mod servers;
 pub mod steam;
 

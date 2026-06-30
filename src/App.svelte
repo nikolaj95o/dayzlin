@@ -127,24 +127,24 @@
   });
 </script>
 
-<main>
-  <header>
-    <h1>dayzlin</h1>
-    <nav>
-      <button class:active={view === "servers"} onclick={() => show("servers")}>Servers</button>
-      <button class:active={view === "favorites"} onclick={() => show("favorites")}>Favorites</button>
-      <button class:active={view === "history"} onclick={() => show("history")}>History</button>
-      <button class:active={view === "settings"} onclick={() => show("settings")}>Settings</button>
+<main class="mx-auto flex h-screen w-full max-w-[1100px] flex-col box-border px-4 pt-4 pb-12 sm:px-5">
+  <header class="flex flex-wrap items-center gap-4">
+    <h1 class="mt-2 mb-4 text-[28px] font-semibold text-text-h">dayzlin</h1>
+    <nav class="ml-auto flex gap-1.5">
+      <button class="btn" class:btn-active={view === "servers"} onclick={() => show("servers")}>Servers</button>
+      <button class="btn" class:btn-active={view === "favorites"} onclick={() => show("favorites")}>Favorites</button>
+      <button class="btn" class:btn-active={view === "history"} onclick={() => show("history")}>History</button>
+      <button class="btn" class:btn-active={view === "settings"} onclick={() => show("settings")}>Settings</button>
     </nav>
   </header>
 
-  <p class="status">{status}</p>
+  <p class="my-2 font-mono text-[13px] text-text">{status}</p>
 
   <!-- Keep the Servers view mounted and hide it with CSS so switching tabs doesn't destroy and
        rebuild the (virtualized) table — returning to it is instant and scroll position survives. -->
-  <div class="view" class:hidden={view !== "servers"}>
-    <div class="toolbar">
-      <button onclick={() => load(true)}>Refresh</button>
+  <div class="flex min-h-0 flex-1 flex-col" class:hidden={view !== "servers"}>
+    <div class="flex flex-wrap items-center gap-3">
+      <button class="btn" onclick={() => load(true)}>Refresh</button>
       <FilterPanel bind:filter bind:query onChange={applyFilters} />
     </div>
     <ServerTable {servers} {onSelect} {isFavorite} {onToggleFavorite} />
@@ -153,23 +153,23 @@
   {#if view === "settings"}
     <Settings />
   {:else if view === "favorites" || view === "history"}
-    <ul class="refs">
+    <ul class="mt-2 list-none p-0">
       {#each (view === "favorites" ? profile?.favorites : profile?.history) ?? [] as r}
-        <li>
-          <span class="name">{r.name}</span>
-          <span class="addr">{r.ip}:{r.port}</span>
-          <span class="ref-actions">
-            <button class="icon play" title="Play" aria-label="Play" onclick={() => playRef(r)}>
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" /></svg>
+        <li class="flex justify-between gap-4 border-b border-border px-2.5 py-2">
+          <span class="font-medium text-text-h">{r.name}</span>
+          <span class="mr-auto font-mono text-[13px]">{r.ip}:{r.port}</span>
+          <span class="flex gap-1.5">
+            <button class="icon-btn-accent" title="Play" aria-label="Play" onclick={() => playRef(r)}>
+              <svg class="h-4 w-4 fill-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" /></svg>
             </button>
             {#if view === "favorites"}
               <button
-                class="icon remove"
+                class="icon-btn"
                 title="Remove from favorites"
                 aria-label="Remove from favorites"
                 onclick={() => removeFavorite(r)}
               >
-                <svg viewBox="0 0 16 16" aria-hidden="true">
+                <svg class="h-4 w-4 fill-none stroke-current [stroke-linecap:round] [stroke-width:1.5]" viewBox="0 0 16 16" aria-hidden="true">
                   <path d="M4 4l8 8M12 4l-8 8" />
                 </svg>
               </button>
@@ -177,7 +177,7 @@
           </span>
         </li>
       {:else}
-        <li class="empty">No {view} yet</li>
+        <li class="flex justify-center border-b border-border px-2.5 py-2 text-text">No {view} yet</li>
       {/each}
     </ul>
   {/if}

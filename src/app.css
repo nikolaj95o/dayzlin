@@ -1,4 +1,28 @@
+@import "tailwindcss";
+
+/* User-selectable theme: dark applies when <html> carries the .dark class (set by theme.ts),
+   not via a media query, so Light/Dark/System can be chosen in Settings. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Expose the existing design tokens as Tailwind colors. `inline` makes the generated utilities
+   read the var at the use-site, so the :root / .dark overrides below take effect at runtime.
+   Enables bg-bg, bg-bg-alt, text-text, text-text-h, border-border, text-accent,
+   bg-accent-bg, border-accent-border, font-mono, etc. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-alt: var(--bg-alt);
+  --color-text: var(--text);
+  --color-text-h: var(--text-h);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-bg: var(--accent-bg);
+  --color-accent-border: var(--accent-border);
+  --font-sans: system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
+}
+
 :root {
+  /* light */
   --text: #6b6375;
   --text-h: #08060d;
   --bg: #fff;
@@ -7,12 +31,27 @@
   --accent: #aa3bff;
   --accent-bg: rgba(170, 59, 255, 0.1);
   --accent-border: rgba(170, 59, 255, 0.5);
+}
 
-  --sans: system-ui, "Segoe UI", Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+.dark {
+  /* dark — same values as the old prefers-color-scheme block, now class-driven */
+  --text: #9ca3af;
+  --text-h: #f3f4f6;
+  --bg: #16171d;
+  --bg-alt: #1f2028;
+  --border: #2e303a;
+  --accent: #c084fc;
+  --accent-bg: rgba(192, 132, 252, 0.15);
+  --accent-border: rgba(192, 132, 252, 0.5);
+}
 
-  font: 15px/145% var(--sans);
+html {
   color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  font: 15px/145% var(--font-sans);
   color: var(--text);
   background: var(--bg);
   text-rendering: optimizeLegibility;
@@ -20,319 +59,33 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --bg-alt: #1f2028;
-    --border: #2e303a;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
+/* A small component layer (still Tailwind, via @apply) for patterns repeated across many
+   elements, so long utility strings aren't pasted everywhere. */
+@layer components {
+  .btn {
+    @apply font-[inherit] text-accent bg-accent-bg border border-transparent rounded-md
+      px-3 py-1 cursor-pointer transition-colors hover:border-accent-border;
   }
-}
-
-body {
-  margin: 0;
-}
-
-main {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 16px 20px 48px;
-  box-sizing: border-box;
-  /* Flex column filling the viewport so the server table gets its own scroll region (the basis
-     for row virtualization in ServerTable) rather than scrolling the whole page. */
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-
-/* The Servers view stays mounted across tab switches; hide it with display:none when inactive. */
-.view {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-.hidden {
-  display: none;
-}
-
-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-nav {
-  display: flex;
-  gap: 6px;
-  margin-left: auto;
-}
-nav button.active {
-  border-color: var(--accent-border);
-  color: var(--text-h);
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.settings {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-width: 360px;
-  margin-top: 12px;
-}
-.settings label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: var(--text-h);
-  font-size: 14px;
-}
-.settings input {
-  font: inherit;
-  color: var(--text-h);
-  background: var(--bg-alt);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 10px;
-}
-.settings .actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.settings .saved {
-  color: var(--accent);
-  font-size: 13px;
-}
-.settings hr {
-  width: 100%;
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 4px 0;
-}
-.settings .hint {
-  font-size: 13px;
-  color: var(--text);
-  line-height: 1.45;
-}
-.settings .field-hint {
-  font-size: 12px;
-  color: var(--text);
-  line-height: 1.4;
-}
-.settings .field-row {
-  display: flex;
-  gap: 8px;
-}
-.settings .field-row input {
-  flex: 1;
-}
-.settings .diag-title {
-  font-size: 14px;
-  color: var(--text-h);
-  margin: 0;
-}
-.settings .diag {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.settings .diag-row {
-  display: flex;
-  gap: 10px;
-  font-size: 13px;
-  align-items: baseline;
-}
-.settings .diag-label {
-  flex: 0 0 130px;
-  color: var(--text);
-}
-.settings .diag-value {
-  color: var(--text-h);
-  word-break: break-all;
-}
-.settings .diag-value.ok {
-  color: #1a9d52;
-}
-.settings .diag-value.bad {
-  color: #d23b3b;
-}
-@media (prefers-color-scheme: dark) {
-  .settings .diag-value.ok {
-    color: #4ade80;
+  /* Active nav/segmented state: pull the label to heading color + show the accent border. */
+  .btn.btn-active {
+    @apply text-text-h border-accent-border;
   }
-  .settings .diag-value.bad {
-    color: #f87171;
+  .icon-btn {
+    @apply inline-flex items-center justify-center w-[30px] h-[30px] p-0 bg-transparent
+      border border-border text-text rounded-md cursor-pointer
+      hover:border-accent-border hover:text-text-h;
   }
-}
-
-.refs {
-  list-style: none;
-  padding: 0;
-  margin: 8px 0 0;
-}
-.refs li {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-}
-.refs .name {
-  color: var(--text-h);
-  font-weight: 500;
-}
-.refs .addr {
-  font-family: var(--mono);
-  font-size: 13px;
-}
-.refs li .addr {
-  margin-right: auto;
-}
-.refs .ref-actions {
-  display: flex;
-  gap: 6px;
-}
-.refs .ref-actions .icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-}
-.refs .ref-actions .icon svg {
-  width: 16px;
-  height: 16px;
-}
-.refs .ref-actions .play svg {
-  fill: currentColor;
-}
-.refs .ref-actions .remove {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-.refs .ref-actions .remove svg {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-}
-.refs .ref-actions .remove:hover {
-  border-color: var(--accent-border);
-  color: var(--text-h);
-}
-.refs .empty {
-  justify-content: center;
-  color: var(--text);
-}
-
-h1 {
-  font-size: 28px;
-  font-weight: 600;
-  color: var(--text-h);
-  margin: 8px 0 16px;
-}
-
-button {
-  font: inherit;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 4px 12px;
-  cursor: pointer;
-  transition: border-color 0.2s;
-}
-button:hover {
-  border-color: var(--accent-border);
-}
-
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 0;
-}
-.filters input[type="text"],
-.filters input:not([type]) {
-  font: inherit;
-  color: var(--text-h);
-  background: var(--bg-alt);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 10px;
-}
-.filters label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  user-select: none;
-}
-
-.status {
-  margin: 8px 0;
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 13px;
-}
-
-/* Scroll region for the virtualized server table; fills the remaining height under the toolbar. */
-.table-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-thead th {
-  text-align: left;
-  font-weight: 600;
-  color: var(--text-h);
-  border-bottom: 1px solid var(--border);
-  padding: 8px 10px;
-  position: sticky;
-  top: 0;
-  background: var(--bg);
-}
-tbody td {
-  border-bottom: 1px solid var(--border);
-  padding: 7px 10px;
-}
-/* Deterministic row height is required by the virtualization math in ServerTable (ROW_H = 44). */
-tbody tr {
-  height: 44px;
-  box-sizing: border-box;
-}
-tbody tr:hover {
-  background: var(--bg-alt);
-}
-td.name {
-  color: var(--text-h);
-  font-weight: 500;
-  /* Keep names on a single line so a long name can't grow a row past ROW_H and misalign the window. */
-  max-width: 380px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-td.empty {
-  text-align: center;
-  color: var(--text);
-  padding: 24px;
+  /* Filled-accent square button (Play). */
+  .icon-btn-accent {
+    @apply inline-flex items-center justify-center w-[30px] h-[30px] p-0 text-accent bg-accent-bg
+      border border-transparent rounded-md cursor-pointer transition-colors
+      hover:border-accent-border;
+  }
+  .field {
+    @apply font-[inherit] text-text-h bg-bg-alt border border-border rounded-md px-2.5 py-1.5;
+  }
+  .modal-card {
+    @apply relative bg-bg border border-border rounded-[10px]
+      shadow-[0_10px_40px_rgba(0,0,0,0.35)];
+  }
 }

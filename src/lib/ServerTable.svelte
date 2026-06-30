@@ -95,33 +95,35 @@
 </script>
 
 <div
-  class="table-scroll"
+  class="min-h-0 flex-1 overflow-auto"
   bind:this={scrollEl}
   bind:clientHeight={viewH}
   onscroll={() => (scrollTop = scrollEl?.scrollTop ?? 0)}
 >
-<table>
+<table class="w-full border-collapse text-sm">
   <thead>
     <tr>
       {#each columns as col}
         {@const info = sortInfo(col.key)}
-        <th aria-sort={info ? (info.dir === "asc" ? "ascending" : "descending") : "none"}>
-          <button class="sort" class:active={!!info} onclick={() => toggleSort(col.key)}>
+        <th class="sticky top-0 border-b border-border bg-bg p-0 text-left font-semibold text-text-h" aria-sort={info ? (info.dir === "asc" ? "ascending" : "descending") : "none"}>
+          <!-- Header sort buttons: look like header text, not default buttons. -->
+          <button class="flex w-full cursor-pointer items-center gap-1 border-0 bg-transparent px-2.5 py-2 text-left font-[inherit] text-text-h" onclick={() => toggleSort(col.key)}>
             {col.label}
-            <span class="arrow">{info ? (info.dir === "asc" ? "▲" : "▼") : ""}</span>
-            {#if info && sortChain.length > 1}<span class="prio">{info.pos}</span>{/if}
+            <!-- Reserve a fixed slot for the arrow so toggling it doesn't shift the header row. -->
+            <span class="inline-block w-[0.9em] text-[0.7em] leading-none">{info ? (info.dir === "asc" ? "▲" : "▼") : ""}</span>
+            {#if info && sortChain.length > 1}<span class="text-[0.7em] leading-none text-accent">{info.pos}</span>{/if}
           </button>
         </th>
       {/each}
-      <th class="clear-col">
+      <th class="sticky top-0 border-b border-border bg-bg px-2 py-1 text-right">
         {#if sortChain.length > 0}
           <button
-            class="icon clear"
+            class="inline-flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-md border border-border bg-transparent p-0 text-text hover:border-accent-border hover:text-text-h"
             title="Clear sorting"
             aria-label="Clear sorting"
             onclick={() => (sortChain = [])}
           >
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+            <svg class="h-4 w-4 fill-none stroke-current [stroke-linecap:round] [stroke-width:1.5]" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
           </button>
         {/if}
       </th>
@@ -129,36 +131,37 @@
   </thead>
   <tbody>
     {#if sorted.length === 0}
-      <tr><td colspan="6" class="empty">No servers</td></tr>
+      <tr><td colspan="6" class="p-6 text-center text-text">No servers</td></tr>
     {:else}
       {#if start > 0}
         <!-- Height must sit on a cell: WebKit ignores `height` on a cell-less <tr>. -->
         <tr aria-hidden="true"><td colspan="6" style="height:{start * ROW_H}px;padding:0;border:0"></td></tr>
       {/if}
       {#each slice as s (s.ip + ":" + s.game_port)}
-      <tr>
-        <td class="name">{s.name}</td>
-        <td>{s.map}</td>
-        <td>{s.players}/{s.max_players}</td>
-        <td>{s.mods.length}</td>
-        <td>{s.first_person ? "1PP" : "3PP"}</td>
-        <td class="actions">
+      <!-- Fixed 44px row height (h-11) is required by the virtualization math (ROW_H = 44). -->
+      <tr class="box-border h-11 hover:bg-bg-alt">
+        <td class="max-w-[380px] overflow-hidden border-b border-border px-2.5 py-[7px] font-medium text-ellipsis whitespace-nowrap text-text-h">{s.name}</td>
+        <td class="border-b border-border px-2.5 py-[7px]">{s.map}</td>
+        <td class="border-b border-border px-2.5 py-[7px]">{s.players}/{s.max_players}</td>
+        <td class="border-b border-border px-2.5 py-[7px]">{s.mods.length}</td>
+        <td class="border-b border-border px-2.5 py-[7px]">{s.first_person ? "1PP" : "3PP"}</td>
+        <td class="flex items-center gap-1.5 border-b border-border px-2.5 py-[7px] whitespace-nowrap">
           {#if s.version_match === false}
-            <span class="badge ver-mismatch" title="Server build {s.version} differs from your installed DayZ">NOT SAME VER</span>
+            <!-- Shown in place of Play when the server's build doesn't match the installed DayZ. -->
+            <span class="inline-flex h-[30px] items-center rounded-[4px] border border-border px-2 text-[0.7em] font-semibold tracking-[0.03em] whitespace-nowrap text-text opacity-75" title="Server build {s.version} differs from your installed DayZ">NOT SAME VER</span>
           {:else}
-            <button class="icon play" title="Play" aria-label="Play" onclick={() => onSelect(s)}>
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" /></svg>
+            <button class="icon-btn-accent" title="Play" aria-label="Play" onclick={() => onSelect(s)}>
+              <svg class="h-4 w-4 fill-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" /></svg>
             </button>
           {/if}
           <button
-            class="icon star"
-            class:on={isFavorite(s)}
+            class="icon-btn {isFavorite(s) ? 'border-accent-border text-accent' : ''}"
             title={isFavorite(s) ? "Remove from favorites" : "Add to favorites"}
             aria-label={isFavorite(s) ? "Remove from favorites" : "Add to favorites"}
             aria-pressed={isFavorite(s)}
             onclick={() => onToggleFavorite(s)}
           >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
+            <svg class="h-4 w-4 stroke-current [stroke-linejoin:round] [stroke-width:1.2] {isFavorite(s) ? 'fill-current' : 'fill-none'}" viewBox="0 0 16 16" aria-hidden="true">
               <path
                 d="M8 1.5l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.8 4.2 13.8l.7-4.3-3.1-3 4.3-.6z"
               />
@@ -174,125 +177,3 @@
   </tbody>
 </table>
 </div>
-
-<style>
-  /* Header sort buttons: look like header text, not default buttons. */
-  th {
-    padding: 0;
-  }
-  .sort {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    width: 100%;
-    padding: 8px 10px;
-    background: transparent;
-    border: 0;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-  .sort:hover {
-    color: var(--text-h);
-  }
-  .sort.active {
-    color: var(--text-h);
-  }
-  /* Reserve a fixed slot for the arrow so toggling it doesn't shift the header row. */
-  .arrow {
-    display: inline-block;
-    width: 0.9em;
-    font-size: 0.7em;
-    line-height: 1;
-  }
-  /* Priority number shown next to the arrow when 2+ columns are sorted. */
-  .prio {
-    font-size: 0.7em;
-    color: var(--accent);
-    line-height: 1;
-  }
-  .actions {
-    display: flex;
-    gap: 6px;
-    white-space: nowrap;
-    align-items: center;
-  }
-  /* Shown in place of Play when the server's build doesn't match the installed DayZ. */
-  .badge.ver-mismatch {
-    display: inline-flex;
-    align-items: center;
-    height: 30px;
-    padding: 0 8px;
-    font-size: 0.7em;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    opacity: 0.75;
-  }
-  .icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    padding: 0;
-  }
-  .icon svg {
-    width: 16px;
-    height: 16px;
-  }
-  /* Play: filled triangle in the accent color. */
-  .play svg {
-    fill: currentColor;
-  }
-  /* Star: outline by default, filled when favorited. */
-  .star {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text);
-  }
-  .star svg {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.2;
-    stroke-linejoin: round;
-  }
-  .star:hover {
-    border-color: var(--accent-border);
-    color: var(--text-h);
-  }
-  .star.on {
-    color: var(--accent);
-    border-color: var(--accent-border);
-  }
-  .star.on svg {
-    fill: currentColor;
-  }
-  /* "Clear sort" button lives in the trailing header cell. Defined after `.icon` so its smaller
-     size wins over the shared 30px `.icon` sizing. */
-  .clear-col {
-    padding: 4px 8px;
-    text-align: right;
-  }
-  .clear {
-    width: 22px;
-    height: 22px;
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text);
-  }
-  .clear svg {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.5;
-    stroke-linecap: round;
-  }
-  .clear:hover {
-    border-color: var(--accent-border);
-    color: var(--text-h);
-  }
-</style>

@@ -4,7 +4,18 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>vite-probe</title>
+    <title>dayzlin</title>
+    <!-- Apply the saved theme before first paint to avoid a flash (main.ts runs deferred). -->
+    <script>
+      (function () {
+        var p = localStorage.getItem("theme") || "system";
+        var dark =
+          p === "dark" ||
+          (p === "system" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

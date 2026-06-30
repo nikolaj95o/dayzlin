@@ -32,118 +32,31 @@
 </script>
 
 {#if $launch}
-  <div class="overlay">
-    <div class="backdrop"></div>
-    <div class="modal" role="dialog" aria-modal="true" aria-busy="true" tabindex="-1">
-      <div class="spinner" aria-hidden="true"></div>
+  <div class="fixed inset-0 z-[100] flex items-center justify-center">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="modal-card flex w-[calc(100%-3rem)] max-w-[420px] flex-col items-center gap-2.5 px-8 py-7 text-center" role="dialog" aria-modal="true" aria-busy="true" tabindex="-1">
+      <div class="h-9 w-9 animate-spin rounded-full border-[3px] border-border border-t-accent motion-reduce:[animation-duration:2s]" aria-hidden="true"></div>
 
       {#if $launch.phase === "preparing"}
-        <p class="phase">Preparing…</p>
+        <p class="m-0 text-[16px] text-text-h">Preparing…</p>
       {:else if $launch.phase === "downloading"}
-        <p class="phase">Downloading mods</p>
-        <progress value={$launch.current} max={$launch.total}></progress>
-        <p class="count">{$launch.current} / {$launch.total}</p>
-        <p class="mod">{$launch.name} ({$launch.id})</p>
+        <p class="m-0 text-[16px] text-text-h">Downloading mods</p>
+        <progress class="h-2 w-full" value={$launch.current} max={$launch.total}></progress>
+        <p class="m-0 text-text [font-variant-numeric:tabular-nums]">{$launch.current} / {$launch.total}</p>
+        <p class="m-0 text-[13px] text-text opacity-80 break-words">{$launch.name} ({$launch.id})</p>
         {#if $launch.total_bytes}
-          <progress value={$launch.bytes} max={$launch.total_bytes}></progress>
+          <progress class="h-2 w-full" value={$launch.bytes} max={$launch.total_bytes}></progress>
         {/if}
-        <p class="size">{formatProgress($launch.bytes, $launch.total_bytes)}</p>
+        <p class="m-0 text-[13px] text-text opacity-70 [font-variant-numeric:tabular-nums]">{formatProgress($launch.bytes, $launch.total_bytes)}</p>
       {:else if $launch.phase === "launching"}
-        <p class="phase">Launching game…</p>
+        <p class="m-0 text-[16px] text-text-h">Launching game…</p>
       {:else if $launch.phase === "starting"}
-        <p class="phase">DayZ is starting…</p>
+        <p class="m-0 text-[16px] text-text-h">DayZ is starting…</p>
       {/if}
 
       {#if canCancel}
-        <button class="cancel" onclick={cancel}>Cancel</button>
+        <button class="mt-2 cursor-pointer rounded-md border border-border bg-transparent px-3 py-1 font-[inherit] text-text transition-colors hover:border-accent-border hover:text-text-h" onclick={cancel}>Cancel</button>
       {/if}
     </div>
   </div>
 {/if}
-
-<style>
-  .overlay {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-  }
-  .backdrop {
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-  }
-  .modal {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 28px 32px;
-    max-width: 420px;
-    width: calc(100% - 48px);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
-    text-align: center;
-  }
-  .spinner {
-    width: 36px;
-    height: 36px;
-    border: 3px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  .phase {
-    margin: 0;
-    font-size: 16px;
-    color: var(--text-h);
-  }
-  progress {
-    width: 100%;
-    height: 8px;
-  }
-  .count {
-    margin: 0;
-    color: var(--text);
-    font-variant-numeric: tabular-nums;
-  }
-  .mod {
-    margin: 0;
-    font-size: 13px;
-    color: var(--text);
-    opacity: 0.8;
-    word-break: break-word;
-  }
-  .size {
-    margin: 0;
-    font-size: 13px;
-    color: var(--text);
-    opacity: 0.7;
-    font-variant-numeric: tabular-nums;
-  }
-  .cancel {
-    margin-top: 8px;
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text);
-  }
-  .cancel:hover {
-    border-color: var(--accent-border);
-    color: var(--text-h);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .spinner {
-      animation-duration: 2s;
-    }
-  }
-</style>

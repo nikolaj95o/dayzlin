@@ -26,4 +26,7 @@
   <label>
     <input type="checkbox" bind:checked={filter.has_slots} onchange={onChange} /> Has slots
   </label>
+  <label title="Hide servers whose game build differs from your installed DayZ">
+    <input type="checkbox" bind:checked={filter.same_version_only} onchange={onChange} /> Same version
+  </label>
 </div>

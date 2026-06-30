@@ -4,6 +4,8 @@ use std::path::PathBuf;
 pub enum Error {
     #[error("steam installation not found")]
     SteamNotFound,
+    #[error("DayZ installation not found in any Steam library")]
+    DayzNotFound,
     #[error("path does not exist: {0}")]
     PathMissing(PathBuf),
     #[error("command `{program}` failed (status {status}): {stderr}")]

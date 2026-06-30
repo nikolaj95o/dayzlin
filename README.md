@@ -36,13 +36,31 @@ Steam desktop client. Before your first mod install:
 2. Click **Set up Steam login** (or run `steamcmd +login <user> +quit` in a terminal).
    Enter your password and Steam Guard code once — SteamCMD caches the session, so later
    installs run non-interactively.
-3. **Close the Steam client** while dayzlin downloads mods. SteamCMD and the client share
-   the same Steam directory and will conflict otherwise.
+
+dayzlin runs SteamCMD under its **own private `HOME`** (`steamcmd-home` in the app data
+dir), so SteamCMD never touches the Steam client's configuration. (By default SteamCMD
+shares the client's Steam directory and a mod download can rewrite Steam's
+`libraryfolders.vdf`, silently removing the DayZ drive from Steam — the isolation prevents
+that.)
 
 Notes:
 - The account must **own DayZ** — anonymous SteamCMD logins cannot download DayZ mods.
 - If a download later fails with a login error, repeat the one-time login above (Steam
   Guard sessions can expire).
+
+## Troubleshooting
+
+- **Can't connect / "missing mod" on a mod-free server / stuck on the last server.** DayZ
+  needs Steam to be **online** to authenticate against a server. If the Steam friends panel
+  shows "disconnected" (offline mode), connections fail and the menu can keep showing the
+  previous session's server and mods — which looks like a missing-mod error. Switch Steam
+  back online (or restart it) and retry.
+- **Steam keeps forgetting the drive DayZ is installed on.** That was caused by SteamCMD
+  rewriting Steam's library list; it is fixed by the private-`HOME` isolation above. Re-add
+  the drive once in **Steam → Settings → Storage → Add Drive** and it will stay.
+- dayzlin launches via `steam -applaunch 221100 … -connect=<ip> -port=<port>`. It does **not**
+  use the `steam://connect/<ip>:<port>` URI, which cannot load mods and would break modded
+  servers.
 
 ## Install
 

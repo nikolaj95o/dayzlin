@@ -14,6 +14,14 @@ pub struct Server {
     pub first_person: bool,
     pub password: bool,
     pub mods: Vec<ServerMod>,
+    /// Game build the server runs, as reported by the feed (e.g. `1.29.163047`). `default` keeps
+    /// caches written before this field existed loadable.
+    #[serde(default)]
+    pub version: String,
+    /// Whether [`version`] matches the installed DayZ build. Transient: set per request by the
+    /// command layer (`None` = unknown / not yet computed), not meaningful in the on-disk cache.
+    #[serde(default)]
+    pub version_match: Option<bool>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -47,6 +55,8 @@ struct RawServer {
     password: bool,
     #[serde(default)]
     mods: Vec<RawMod>,
+    #[serde(default)]
+    version: Option<String>,
 }
 #[derive(Deserialize)]
 struct RawEndpoint {
@@ -59,9 +69,21 @@ struct RawMod {
     workshop_id: u64,
 }
 
+/// Keep the first server for each `(ip, game_port)`. The endpoint is a unique identity: the UI
+/// keys rows by it and favorites/history match on it, and the feed lists some endpoints many
+/// times — a duplicate key is a fatal Svelte render error. Applied to both freshly parsed and
+/// cached lists so stale duped caches are sanitized too.
+pub fn dedupe_by_endpoint(servers: Vec<Server>) -> Vec<Server> {
+    let mut seen = std::collections::HashSet::new();
+    servers
+        .into_iter()
+        .filter(|s| seen.insert((s.ip.clone(), s.game_port)))
+        .collect()
+}
+
 pub fn parse_servers(json: &str) -> Result<Vec<Server>, Error> {
     let raw: RawResponse = serde_json::from_str(json).map_err(|e| Error::Parse(e.to_string()))?;
-    Ok(raw
+    let servers = raw
         .result
         .into_iter()
         .map(|r| Server {
@@ -82,8 +104,11 @@ pub fn parse_servers(json: &str) -> Result<Vec<Server>, Error> {
                     workshop_id: m.workshop_id,
                 })
                 .collect(),
+            version: r.version.unwrap_or_default(),
+            version_match: None,
         })
-        .collect())
+        .collect();
+    Ok(dedupe_by_endpoint(servers))
 }
 
 #[cfg(test)]
@@ -99,8 +124,24 @@ mod tests {
         assert_eq!(s.name, "Test Namalsk PVE");
         assert_eq!(s.ip, "1.2.3.4");
         assert_eq!(s.game_port, 2302);
+        assert_eq!(s.version, "1.29.162510");
         assert_eq!(s.first_person, true);
         assert_eq!(s.mods.len(), 2);
         assert_eq!(s.mods[0].workshop_id, 1559212036);
+    }
+
+    #[test]
+    fn dedupes_repeated_endpoints_keeping_first() {
+        // Two entries share 1.2.3.4:2302; a distinct endpoint follows. The feed really does
+        // this (e.g. one endpoint listed 18 times) and a duplicate row key crashes the UI.
+        let json = r#"{"result":[
+            {"name":"First","endpoint":{"ip":"1.2.3.4"},"gamePort":2302,"players":1,"maxPlayers":60,"map":"chernarusplus","time":"01:00"},
+            {"name":"Dup","endpoint":{"ip":"1.2.3.4"},"gamePort":2302,"players":2,"maxPlayers":60,"map":"chernarusplus","time":"02:00"},
+            {"name":"Other","endpoint":{"ip":"5.6.7.8"},"gamePort":2302,"players":3,"maxPlayers":60,"map":"namalsk","time":"03:00"}
+        ]}"#;
+        let servers = parse_servers(json).unwrap();
+        assert_eq!(servers.len(), 2);
+        assert_eq!(servers[0].name, "First"); // first occurrence wins
+        assert_eq!(servers[1].name, "Other");
     }
 }

@@ -11,6 +11,10 @@ pub struct ServerFilter {
     pub max_mods: Option<usize>,
     pub min_players: Option<u32>,
     pub has_slots: bool,
+    /// Hide servers whose build differs from the installed DayZ. Applied in the command layer
+    /// (it needs the installed version), not in [`apply_filter`].
+    #[serde(default)]
+    pub same_version_only: bool,
 }
 
 pub fn apply_filter(servers: &[Server], f: &ServerFilter) -> Vec<Server> {
@@ -72,6 +76,8 @@ mod tests {
                     workshop_id: i as u64,
                 })
                 .collect(),
+            version: "1.29.163047".into(),
+            version_match: None,
         }
     }
 

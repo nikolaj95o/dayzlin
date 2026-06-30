@@ -9,6 +9,7 @@
       "maxPlayers": 60,
       "map": "namalsk",
       "time": "12:00",
+      "version": "1.29.162510",
       "firstPersonOnly": true,
       "password": false,
       "mods": [

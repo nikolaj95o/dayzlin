@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::process::CommandRunner;
+use crate::process::spawn_detached;
 use crate::servers::Server;
 use crate::DAYZ_APP_ID;
 
@@ -8,8 +8,9 @@ pub fn build_launch_args(server: &Server, player: &str, password: Option<&str>) 
         "-applaunch".into(),
         DAYZ_APP_ID.to_string(),
         "-nolauncher".into(),
-        "-name".into(),
-        player.into(),
+        // Equals form, matching `-connect=`/`-port=` below. DayZ ignores the space-separated
+        // `-name <value>` form, which silently falls back to the "Survivor" default profile.
+        format!("-name={player}"),
     ];
     if !server.mods.is_empty() {
         let mods = server
@@ -28,10 +29,13 @@ pub fn build_launch_args(server: &Server, player: &str, password: Option<&str>) 
     args
 }
 
-pub async fn launch(runner: &dyn CommandRunner, args: &[String]) -> Result<(), Error> {
-    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    runner.run("steam", &arg_refs).await?;
-    Ok(())
+/// Hand the launch off to Steam and return immediately. This is fire-and-forget on purpose:
+/// `steam -applaunch` either signals an already-running client (and exits at once) or has to
+/// cold-start Steam (which then stays in the foreground). Awaiting it would hang the UI on a cold
+/// start, and reaping the child would kill the Steam we just started — so we spawn detached.
+pub fn launch(args: &[String]) -> Result<(), Error> {
+    log::info!("launching: steam {}", args.join(" "));
+    spawn_detached("steam", args)
 }
 
 #[cfg(test)]
@@ -60,6 +64,8 @@ mod tests {
                     workshop_id: 2,
                 },
             ],
+            version: "1.29.163047".into(),
+            version_match: None,
         }
     }
 
@@ -69,8 +75,7 @@ mod tests {
         assert_eq!(args[0], "-applaunch");
         assert_eq!(args[1], "221100");
         assert!(args.contains(&"-nolauncher".to_string()));
-        assert!(args.contains(&"-name".to_string()));
-        assert!(args.contains(&"survivor".to_string()));
+        assert!(args.contains(&"-name=survivor".to_string()));
         assert!(args.contains(&"-mod=@1;@2".to_string()));
         assert!(args.contains(&"-connect=5.6.7.8".to_string()));
         assert!(args.contains(&"-port=2302".to_string()));

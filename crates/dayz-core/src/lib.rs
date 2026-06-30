@@ -7,6 +7,7 @@ pub mod process;
 pub mod profile;
 pub mod servers;
 pub mod steam;
+pub mod version;
 
 pub use error::Error;
 

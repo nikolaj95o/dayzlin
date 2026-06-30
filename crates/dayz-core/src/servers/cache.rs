@@ -45,6 +45,8 @@ mod tests {
                 name: "m".into(),
                 workshop_id: 1,
             }],
+            version: "1.29.163047".into(),
+            version_match: None,
         }]
     }
 

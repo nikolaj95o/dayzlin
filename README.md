@@ -1,7 +1,7 @@
 # dayzlin
 
 A graphical **DayZ launcher for Linux** — browse and filter community servers,
-install/update the mods they require via SteamCMD, then launch and connect.
+install the mods they require through the running Steam client, then launch and connect.
 Built with Rust + Tauri and shipped as a self-contained Flatpak (AppImage fallback).
 
 > **Status: early (0.1.x).** The domain logic and UI are in place and unit-tested,
@@ -14,9 +14,9 @@ Built with Rust + Tauri and shipped as a self-contained Flatpak (AppImage fallba
 - Server browser: live server list with filters (map, first-person, password,
   free slots, mod count, players) and fuzzy search.
 - Mod handling: detects installed mods, computes what a server still needs, and
-  drives SteamCMD to download/update; symlinks mods into the game directory.
+  asks the running Steam client to download them; symlinks mods into the game directory.
 - One-click play: builds the DayZ launch arguments and connects to the server.
-- Settings: player name and Steam login; favorites and history (WIP).
+- Settings: player name and DayZ location; favorites and history (WIP).
 - Works with both **native** Steam (`~/.steam/steam`) and **Flatpak** Steam
   (`~/.var/app/com.valvesoftware.Steam`).
 
@@ -24,29 +24,20 @@ Built with Rust + Tauri and shipped as a self-contained Flatpak (AppImage fallba
 
 - Linux (x86-64). No Windows/macOS support.
 - **Steam** installed, with **DayZ** (App ID 221100) owned and installed.
-- **SteamCMD** available on the host (most distros package it) for mod installs.
 - A GPU/driver capable of running DayZ under Proton.
 
-## Steam setup (first time)
+## Steam setup
 
-Installing mods uses **SteamCMD**, which keeps its **own** login, separate from the
-Steam desktop client. Before your first mod install:
+There is no separate login or extra dependency. dayzlin downloads mods by asking the
+**Steam client you're already logged into** to fetch them (via a `steam://` workshop
+download), then symlinks them into the game directory. Just make sure, before you Play:
 
-1. Enter your Steam account name in **Settings → Steam login** and Save.
-2. Click **Set up Steam login** (or run `steamcmd +login <user> +quit` in a terminal).
-   Enter your password and Steam Guard code once — SteamCMD caches the session, so later
-   installs run non-interactively.
+- **Steam is running and logged in** (the Settings → Diagnostics panel shows "Steam
+  running"). Mods can only download while it's open.
+- Your account **owns DayZ** — required to download DayZ workshop items.
 
-dayzlin runs SteamCMD under its **own private `HOME`** (`steamcmd-home` in the app data
-dir), so SteamCMD never touches the Steam client's configuration. (By default SteamCMD
-shares the client's Steam directory and a mod download can rewrite Steam's
-`libraryfolders.vdf`, silently removing the DayZ drive from Steam — the isolation prevents
-that.)
-
-Notes:
-- The account must **own DayZ** — anonymous SteamCMD logins cannot download DayZ mods.
-- If a download later fails with a login error, repeat the one-time login above (Steam
-  Guard sessions can expire).
+Downloads are one-shot (dayzlin does not subscribe you to the mods), so they don't clutter
+your Steam Workshop subscriptions.
 
 ## Troubleshooting
 
@@ -55,9 +46,10 @@ Notes:
   shows "disconnected" (offline mode), connections fail and the menu can keep showing the
   previous session's server and mods — which looks like a missing-mod error. Switch Steam
   back online (or restart it) and retry.
-- **Steam keeps forgetting the drive DayZ is installed on.** That was caused by SteamCMD
-  rewriting Steam's library list; it is fixed by the private-`HOME` isolation above. Re-add
-  the drive once in **Steam → Settings → Storage → Add Drive** and it will stay.
+- **A mod won't download / the progress bar never moves.** Downloads are driven by the
+  Steam client, so it must be **running and logged in** — check Settings → Diagnostics.
+  If a download stalls, look in Steam for a paused/failed workshop download or free up disk
+  space, then Play again.
 - dayzlin launches via `steam -applaunch 221100 … -connect=<ip> -port=<port>`. It does **not**
   use the `steam://connect/<ip>:<port>` URI, which cannot load mods and would break modded
   servers.
@@ -104,28 +96,28 @@ npm run check               # svelte-check / TypeScript
 ## Architecture
 
 - **`crates/dayz-core`** — all domain logic: Steam detection, server fetch/cache/
-  filter, mod state + SteamCMD orchestration, launch-arg building. No UI, no Tauri.
+  filter, mod state + Steam-client download orchestration, launch-arg building. No UI, no Tauri.
 - **`src-tauri`** — thin Tauri v2 app exposing core functions as commands and
   streaming progress events. No business logic.
 - **`src/`** — Svelte + TypeScript frontend (server browser, settings, play).
 
-When running inside Flatpak, Steam/SteamCMD calls are routed through
+When running inside Flatpak, Steam calls are routed through
 `flatpak-spawn --host` automatically.
 
 ## Roadmap to 1.0
 
-1. Validate the complete loop on real hardware: browse → install missing mods via
-   SteamCMD → launch DayZ → connect (i.e. actually play through it).
+1. Validate the complete loop on real hardware: browse → download missing mods via
+   the Steam client → launch DayZ → connect (i.e. actually play through it).
 2. Build and verify a Flatpak/AppImage on a clean system.
 3. Wire up the remaining UI: record history on launch, add/remove favorites,
-   surface error states (login expiry, anonymous account, Steam not found).
+   surface error states (Steam not running, download stalled, Steam not found).
 
 ## Acknowledgements
 
 dayzlin builds on the knowledge and approach of existing Linux DayZ tooling:
 
 - [dayz-ctl](https://github.com/WoozyMasta/dayz-ctl) by WoozyMasta — a DayZ
-  launcher whose workflow (SteamCMD mod handling, mod symlinking, Proton launch
+  launcher whose workflow (mod handling, mod symlinking, Proton launch
   invocation) informed dayzlin's design.
 - [dayzsalauncher](https://dayzsalauncher.com/) — dayzlin uses its public
   server-list API as the source of community server data.

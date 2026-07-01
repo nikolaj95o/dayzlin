@@ -1,8 +1,9 @@
+use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
 use crate::error::Error;
-use crate::process::{with_home, CommandRunner};
 use crate::servers::ServerMod;
+use crate::steam::DayzInstall;
 use crate::DAYZ_APP_ID;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -157,7 +158,7 @@ pub fn ensure_mod_symlinks(game_dir: &Path, workshop_dir: &Path, ids: &[u64]) ->
 }
 
 /// Recursively sum the byte sizes of all files under `path`. Returns 0 if `path` is missing or
-/// unreadable, so callers can poll it before SteamCMD's staging directory appears.
+/// unreadable, so callers can poll it before Steam's staging directory appears.
 pub fn dir_size_bytes(path: &Path) -> u64 {
     let Ok(entries) = std::fs::read_dir(path) else {
         return 0;
@@ -177,70 +178,233 @@ pub fn dir_size_bytes(path: &Path) -> u64 {
     total
 }
 
-pub async fn download_mod(
-    runner: &dyn CommandRunner,
-    home: &Path,
-    login: &str,
-    install_dir: &Path,
-    id: u64,
-) -> Result<(), Error> {
-    if login.is_empty() || login == "anonymous" {
-        return Err(Error::AnonymousAccount);
+/// `steam://` URL that asks a running, logged-in Steam client to download a workshop item
+/// *without* subscribing to it. Opening the item's `CommunityFilePage` with a chained
+/// `+workshop_download_item <appid> <id>` console command triggers a one-shot download into the
+/// workshop content tree — the same mechanism dztui uses. This keeps the user's Steam Workshop
+/// subscriptions untouched (matching dayzlin's "fetch only what this server needs" model), at the
+/// cost of Steam not auto-updating the item later (we own staleness).
+pub fn workshop_download_url(id: u64) -> String {
+    format!("steam://url/CommunityFilePage/{id}+workshop_download_item {DAYZ_APP_ID} {id}")
+}
+
+/// True once a finished workshop item is present in the content tree. Steam writes the item's
+/// `meta.cpp` only after the download fully lands (in-progress data lives under
+/// `workshop/downloads/…`), so its presence is a reliable "done" signal.
+pub fn is_download_complete(workshop_dir: &Path, id: u64) -> bool {
+    workshop_dir.join(id.to_string()).join("meta.cpp").exists()
+}
+
+/// Undo a `+workshop_download_item` request that was cancelled or never finished. Because that
+/// command downloads *without* subscribing (see [`workshop_download_url`]), Steam leaves no
+/// subscription to remove — instead the pending download lives on as partial staging data plus a
+/// `NeedsDownload`/`WorkshopItemDetails` entry in `appworkshop_<appid>.acf`, and Steam silently
+/// resumes it on the next start. This removes both so the item is truly forgotten.
+///
+/// **Only safe with the Steam client closed** — Steam rewrites this manifest from memory while
+/// running and would clobber the edit (or re-stage the deleted data). Callers gate on
+/// [`crate::process::steam_running`]. A *completed* download is never touched: its content is a real
+/// install we link into the game.
+pub fn remove_workshop_download(dayz: &DayzInstall, id: u64) -> Result<(), Error> {
+    if is_download_complete(&dayz.workshop_dir(), id) {
+        return Ok(());
     }
-    let app = DAYZ_APP_ID.to_string();
-    let id_s = id.to_string();
-    let dir = install_dir.to_string_lossy();
-    // `+force_install_dir` must precede `+login` for `workshop_download_item` to honor it.
-    // Without it SteamCMD writes into its own default tree, which often differs from the
-    // Steam client's library, so the downloaded files would never appear where we verify.
-    let args = [
-        "+@ShutdownOnFailedCommand",
-        "1",
-        "+force_install_dir",
-        &dir,
-        "+login",
-        login,
-        "+workshop_download_item",
-        &app,
-        &id_s,
-        "validate",
-        "+quit",
-    ];
-    // Run under an isolated HOME so SteamCMD's bootstrap can't rewrite the Steam client's shared
-    // `libraryfolders.vdf` and drop the DayZ library (see `process::with_home`). `+force_install_dir`
-    // is an explicit absolute path, so content still lands in the same library tree we verify below.
-    let (prog, full) = with_home(home, "steamcmd", &args);
-    let full_refs: Vec<&str> = full.iter().map(|s| s.as_str()).collect();
-    log::debug!("running steamcmd workshop_download_item {app} {id_s}");
-    let out = runner.run(&prog, &full_refs).await?;
-    let combined = format!("{}{}", out.stdout, out.stderr);
-    if combined.contains("FAILED login") || combined.contains("Invalid Password") {
-        log::warn!("steamcmd login failed for mod {id}: {combined}");
-        return Err(Error::SteamCmdLogin {
-            detail: combined.trim().to_string(),
-        });
+    let staging = dayz.workshop_downloads_dir().join(id.to_string());
+    if staging.exists() {
+        std::fs::remove_dir_all(&staging)?;
     }
-    if out.status != 0 {
-        log::warn!(
-            "steamcmd failed for mod {id} (status {}): {combined}",
-            out.status
-        );
-        return Err(Error::CommandFailed {
-            program: "steamcmd".into(),
-            status: out.status,
-            stderr: out.stderr,
-        });
+    let manifest = dayz.workshop_manifest_path();
+    if let Ok(body) = std::fs::read_to_string(&manifest) {
+        let updated = strip_workshop_item(&body, id);
+        if updated != body {
+            std::fs::write(&manifest, updated)?;
+        }
     }
-    log::debug!("steamcmd downloaded mod {id} successfully");
     Ok(())
+}
+
+/// Every `"..."` token on a VDF line, in order. A key/value line yields two; a block-opener key
+/// (e.g. `"WorkshopItemDetails"` or an item id, which is followed by its own `{`) yields one.
+fn quoted_tokens(line: &str) -> Vec<String> {
+    let bytes = line.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'"' {
+            let start = i + 1;
+            let mut j = start;
+            while j < bytes.len() && bytes[j] != b'"' {
+                j += 1;
+            }
+            out.push(line[start..j].to_string());
+            i = j + 1;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Numeric item ids listed under `WorkshopItemsInstalled` and under `WorkshopItemDetails`, walking
+/// the VDF by brace depth (no full parser, matching the line-scan style used elsewhere here).
+fn workshop_section_ids(acf: &str) -> (HashSet<u64>, HashSet<u64>) {
+    let (mut installed, mut details) = (HashSet::new(), HashSet::new());
+    let mut stack: Vec<String> = Vec::new();
+    let mut pending: Option<String> = None;
+    for line in acf.lines() {
+        let t = line.trim();
+        if t == "{" {
+            let key = pending.take().unwrap_or_default();
+            if let (Some(section), Ok(item)) = (stack.last(), key.parse::<u64>()) {
+                match section.as_str() {
+                    "WorkshopItemsInstalled" => {
+                        installed.insert(item);
+                    }
+                    "WorkshopItemDetails" => {
+                        details.insert(item);
+                    }
+                    _ => {}
+                }
+            }
+            stack.push(key);
+        } else if t == "}" {
+            stack.pop();
+        } else {
+            let toks = quoted_tokens(t);
+            pending = (toks.len() == 1).then(|| toks[0].clone());
+        }
+    }
+    (installed, details)
+}
+
+/// Drop item `id`'s block from the `WorkshopItemDetails` section of an `appworkshop_*.acf` body and,
+/// when no pending (listed-but-not-installed) items remain afterward, clear the top-level
+/// `NeedsDownload` flag. `WorkshopItemsInstalled` and every other item are left byte-for-byte intact.
+fn strip_workshop_item(acf: &str, id: u64) -> String {
+    let id_str = id.to_string();
+    let (installed, details) = workshop_section_ids(acf);
+    let clear_needs_download = details
+        .iter()
+        .filter(|d| **d != id)
+        .all(|d| installed.contains(d));
+
+    let mut out: Vec<String> = Vec::new();
+    let mut stack: Vec<String> = Vec::new();
+    let mut pending_key: Option<String> = None;
+    // A block-opener key line is held until its `{` arrives, so we can drop both together when the
+    // block is the one being removed.
+    let mut pending_line: Option<String> = None;
+    let mut skip_depth: Option<usize> = None;
+
+    for line in acf.lines() {
+        let t = line.trim();
+        if t == "{" {
+            let key = pending_key.take().unwrap_or_default();
+            let held = pending_line.take();
+            let entering_target = skip_depth.is_none()
+                && stack.last().map(|s| s == "WorkshopItemDetails").unwrap_or(false)
+                && key == id_str;
+            stack.push(key);
+            if entering_target {
+                skip_depth = Some(stack.len());
+                continue; // drop the held opener key line and this `{`
+            }
+            if skip_depth.is_none() {
+                if let Some(h) = held {
+                    out.push(h);
+                }
+                out.push(line.to_string());
+            }
+            continue;
+        }
+        if t == "}" {
+            let depth = stack.len();
+            stack.pop();
+            if skip_depth == Some(depth) {
+                skip_depth = None;
+                continue; // drop the target block's closing brace
+            }
+            if skip_depth.is_none() {
+                out.push(line.to_string());
+            }
+            continue;
+        }
+        // Defensive: flush a held opener that wasn't followed by `{` (not expected in valid VDF).
+        if let Some(h) = pending_line.take() {
+            if skip_depth.is_none() {
+                out.push(h);
+            }
+        }
+        let toks = quoted_tokens(t);
+        if toks.len() == 1 {
+            pending_key = Some(toks[0].clone());
+            pending_line = Some(line.to_string());
+            continue;
+        }
+        pending_key = None;
+        if skip_depth.is_some() {
+            continue;
+        }
+        let at_top = stack.last().map(|s| s == "AppWorkshop").unwrap_or(false);
+        if clear_needs_download && at_top && toks.first().map(|k| k == "NeedsDownload") == Some(true)
+        {
+            let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+            out.push(format!("{indent}\"NeedsDownload\"\t\t\"0\""));
+        } else {
+            out.push(line.to_string());
+        }
+    }
+
+    let mut result = out.join("\n");
+    if acf.ends_with('\n') {
+        result.push('\n');
+    }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::servers::ServerMod;
+    use crate::steam::DayzInstall;
+    use std::collections::HashSet;
     use std::fs;
     use tempfile::tempdir;
+
+    /// A minimal `appworkshop_221100.acf`: items 1 & 2 fully installed, item 3 pending
+    /// (listed in details only), `NeedsDownload` set.
+    const WORKSHOP_ACF: &str = "\"AppWorkshop\"
+{
+\t\"appid\"\t\t\"221100\"
+\t\"NeedsDownload\"\t\t\"1\"
+\t\"WorkshopItemsInstalled\"
+\t{
+\t\t\"1\"
+\t\t{
+\t\t\t\"size\"\t\t\"100\"
+\t\t}
+\t\t\"2\"
+\t\t{
+\t\t\t\"size\"\t\t\"200\"
+\t\t}
+\t}
+\t\"WorkshopItemDetails\"
+\t{
+\t\t\"1\"
+\t\t{
+\t\t\t\"manifest\"\t\t\"111\"
+\t\t}
+\t\t\"2\"
+\t\t{
+\t\t\t\"manifest\"\t\t\"222\"
+\t\t}
+\t\t\"3\"
+\t\t{
+\t\t\t\"manifest\"\t\t\"333\"
+\t\t}
+\t}
+}
+";
 
     const META: &str = r#"
 protocol = 1;
@@ -297,7 +461,24 @@ timestamp = 133000000;
         assert_eq!(missing_mods(&required, &installed), vec![2]);
     }
 
-    use crate::process::{MockRunner, Output};
+    #[test]
+    fn workshop_download_url_targets_community_file_page_with_download_command() {
+        assert_eq!(
+            workshop_download_url(1559212036),
+            "steam://url/CommunityFilePage/1559212036+workshop_download_item 221100 1559212036"
+        );
+    }
+
+    #[test]
+    fn is_download_complete_tracks_meta_cpp() {
+        let dir = tempdir().unwrap();
+        assert!(!is_download_complete(dir.path(), 42));
+        let m = dir.path().join("42");
+        fs::create_dir_all(&m).unwrap();
+        assert!(!is_download_complete(dir.path(), 42)); // dir exists, meta.cpp not yet
+        fs::write(m.join("meta.cpp"), META).unwrap();
+        assert!(is_download_complete(dir.path(), 42));
+    }
 
     #[test]
     fn creates_symlinks_for_installed_mods() {
@@ -398,64 +579,75 @@ timestamp = 133000000;
         assert_eq!(fs::read(m.join("addons/keep.pbo")).unwrap(), b"keep");
     }
 
-    #[tokio::test]
-    async fn download_mod_rejects_anonymous() {
-        let runner = MockRunner::new();
-        let err = download_mod(&runner, Path::new("/h"), "anonymous", Path::new("/steam"), 1)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, crate::Error::AnonymousAccount));
+    #[test]
+    fn strip_removes_pending_item_and_clears_needs_download() {
+        // Item 3 is the only pending one; removing it leaves every listed detail installed.
+        let out = strip_workshop_item(WORKSHOP_ACF, 3);
+        let (installed, details) = workshop_section_ids(&out);
+        assert_eq!(installed, HashSet::from([1, 2])); // installs untouched
+        assert_eq!(details, HashSet::from([1, 2])); // detail 3 gone
+        assert!(out.contains("\"NeedsDownload\"\t\t\"0\""));
+        assert!(!out.contains("\"333\"")); // the removed block's contents are gone
     }
 
-    #[tokio::test]
-    async fn download_mod_invokes_steamcmd_with_expected_args() {
-        // Runs via an isolated HOME, so the spawned program is `env HOME=… steamcmd …`.
-        let runner = MockRunner::new().with_response(
-            "env",
-            Output {
-                status: 0,
-                stdout: "Success. Downloaded item".into(),
-                stderr: String::new(),
-            },
-        );
-        download_mod(
-            &runner,
-            Path::new("/home/me/.local/share/dayzlin/steamcmd-home"),
-            "user",
-            Path::new("/home/me/.steam/steam"),
-            1559212036,
-        )
-        .await
-        .unwrap();
-        let (prog, args) = runner.calls()[0].clone();
-        assert_eq!(prog, "env");
-        assert!(args.iter().any(|a| a == "HOME=/home/me/.local/share/dayzlin/steamcmd-home"));
-        assert!(args.iter().any(|a| a == "steamcmd"));
-        assert!(args.iter().any(|a| a == "+force_install_dir"));
-        assert!(args.iter().any(|a| a == "/home/me/.steam/steam"));
-        assert!(args.iter().any(|a| a == "+workshop_download_item"));
-        assert!(args.iter().any(|a| a == "221100"));
-        assert!(args.iter().any(|a| a == "1559212036"));
+    #[test]
+    fn strip_keeps_needs_download_when_a_pending_item_remains() {
+        // Remove detail 1 (installed) while pending item 3 is still listed: nothing to clear.
+        let out = strip_workshop_item(WORKSHOP_ACF, 1);
+        let (installed, details) = workshop_section_ids(&out);
+        assert!(installed.contains(&1)); // WorkshopItemsInstalled entry for 1 is left in place
+        assert_eq!(details, HashSet::from([2, 3])); // only the detail entry for 1 is removed
+        assert!(out.contains("\"NeedsDownload\"\t\t\"1\""));
     }
 
-    #[tokio::test]
-    async fn download_mod_maps_login_failure() {
-        let runner = MockRunner::new().with_response(
-            "env",
-            Output {
-                status: 0,
-                stdout: "FAILED login with result code Invalid Password".into(),
-                stderr: String::new(),
-            },
-        );
-        let err = download_mod(&runner, Path::new("/h"), "user", Path::new("/steam"), 1)
-            .await
-            .unwrap_err();
-        match err {
-            crate::Error::SteamCmdLogin { detail } => {
-                assert!(detail.contains("Invalid Password"));
-            }
-            other => panic!("expected SteamCmdLogin, got {other:?}"),
-        }
+    fn seed_manifest(dayz: &DayzInstall, body: &str) {
+        let manifest = dayz.workshop_manifest_path();
+        fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+        fs::write(&manifest, body).unwrap();
+    }
+
+    fn seed_staging(dayz: &DayzInstall, id: u64) {
+        let staging = dayz.workshop_downloads_dir().join(id.to_string());
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("part.bin"), vec![0u8; 64]).unwrap();
+    }
+
+    #[test]
+    fn remove_download_deletes_staging_and_strips_manifest() {
+        let dir = tempdir().unwrap();
+        let dayz = DayzInstall {
+            root: dir.path().to_path_buf(),
+        };
+        seed_manifest(&dayz, WORKSHOP_ACF);
+        seed_staging(&dayz, 3);
+
+        remove_workshop_download(&dayz, 3).unwrap();
+
+        assert!(!dayz.workshop_downloads_dir().join("3").exists());
+        let body = fs::read_to_string(dayz.workshop_manifest_path()).unwrap();
+        let (_, details) = workshop_section_ids(&body);
+        assert!(!details.contains(&3));
+        assert!(body.contains("\"NeedsDownload\"\t\t\"0\""));
+    }
+
+    #[test]
+    fn remove_download_never_touches_a_completed_item() {
+        let dir = tempdir().unwrap();
+        let dayz = DayzInstall {
+            root: dir.path().to_path_buf(),
+        };
+        // A finished install: content/<id>/meta.cpp exists.
+        let content = dayz.workshop_dir().join("3");
+        fs::create_dir_all(&content).unwrap();
+        fs::write(content.join("meta.cpp"), META).unwrap();
+        seed_manifest(&dayz, WORKSHOP_ACF);
+        seed_staging(&dayz, 3);
+
+        remove_workshop_download(&dayz, 3).unwrap();
+
+        // Everything left as-is because the item is a real, complete install.
+        assert!(dayz.workshop_downloads_dir().join("3").exists());
+        let body = fs::read_to_string(dayz.workshop_manifest_path()).unwrap();
+        assert_eq!(body, WORKSHOP_ACF);
     }
 }

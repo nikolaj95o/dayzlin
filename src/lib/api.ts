@@ -34,7 +34,6 @@ export interface ServerRef {
   port: number;
 }
 export interface Profile {
-  steam_login: string;
   player: string;
   steam_root: string | null;
   favorites: ServerRef[];
@@ -50,15 +49,20 @@ export interface CommandError {
 // Diagnostics for the Settings tab; mirrors the Rust `EnvReport` struct.
 export interface EnvReport {
   app_version: string;
-  steamcmd_installed: boolean;
-  terminal: string | null;
+  steam_running: boolean;
   steam_found: boolean;
   steam_kind: string | null;
   steam_root: string | null;
   dayz_installed: boolean;
   dayz_path: string | null;
   dayz_version: string | null;
-  steam_login: string;
+}
+
+// Result of a leftover-download cleanup pass; mirrors the Rust `CleanupReport` struct.
+export interface CleanupReport {
+  steam_running: boolean;
+  removed: number;
+  pending: number;
 }
 
 // Mirrors the Rust `LaunchProgress` enum emitted on the `launch-progress` event.
@@ -77,7 +81,6 @@ export type LaunchProgress =
 
 export const listServers = (refresh: boolean) =>
   invoke<Server[]>("list_servers", { refresh });
-export const setupSteamLogin = () => invoke<void>("setup_steam_login");
 export const filterServers = (filter: ServerFilter, query: string) =>
   invoke<Server[]>("filter_servers", { filter, query });
 export const play = (server: Server, password: string | null) =>
@@ -90,3 +93,5 @@ export const toggleFavorite = (serverRef: ServerRef) =>
   invoke<Profile>("toggle_favorite", { serverRef });
 export const checkEnvironment = () =>
   invoke<EnvReport>("check_environment");
+export const cleanupDownloads = () =>
+  invoke<CleanupReport>("cleanup_downloads");

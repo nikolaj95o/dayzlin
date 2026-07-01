@@ -2,18 +2,20 @@
   import {
     getProfile,
     saveProfile,
-    setupSteamLogin,
     checkEnvironment,
+    cleanupDownloads,
     type Profile,
     type EnvReport,
   } from "./api";
-  import { showError, showMessage } from "./dialog";
+  import { showError } from "./dialog";
   import { open } from "@tauri-apps/plugin-dialog";
   import { theme, setTheme } from "./theme.svelte";
 
   let profile = $state<Profile | null>(null);
   let saved = $state(false);
   let env = $state<EnvReport | null>(null);
+  let cleaning = $state(false);
+  let cleanupMsg = $state<string | null>(null);
 
   async function loadP() {
     profile = await getProfile();
@@ -53,24 +55,27 @@
       showError(e);
     }
   }
-  async function setupLogin() {
-    if (!profile) return;
-    // Persist the current login first — the helper reads it from disk.
-    await saveProfile(profile);
+  async function cleanup() {
+    cleaning = true;
+    cleanupMsg = null;
     try {
-      await setupSteamLogin();
-      showMessage({
-        title: "Steam login started",
-        message:
-          "A terminal opened running steamcmd. Enter your password and Steam Guard " +
-          "code there, wait for 'Waiting for user info...OK', then close it and try " +
-          "Play again. Close the Steam client during downloads.",
-      });
+      const r = await cleanupDownloads();
+      if (r.steam_running) {
+        cleanupMsg =
+          r.pending > 0
+            ? `Steam is running — close it fully, then click again to remove ${r.pending} leftover download${r.pending === 1 ? "" : "s"}.`
+            : "Steam is running — close it fully before cleaning up.";
+      } else if (r.removed > 0) {
+        cleanupMsg = `Removed ${r.removed} leftover download${r.removed === 1 ? "" : "s"}.`;
+      } else {
+        cleanupMsg = "No leftover downloads to clean up.";
+      }
     } catch (e) {
       showError(e);
+    } finally {
+      cleaning = false;
     }
   }
-
   loadP();
   loadEnv();
 </script>
@@ -89,10 +94,6 @@
     <label class="flex flex-col gap-1 text-sm text-text-h">
       Player name
       <input class="field" bind:value={profile.player} placeholder="survivor" />
-    </label>
-    <label class="flex flex-col gap-1 text-sm text-text-h">
-      Steam login
-      <input class="field" bind:value={profile.steam_login} placeholder="steam username" />
     </label>
     <label class="flex flex-col gap-1 text-sm text-text-h">
       DayZ install location
@@ -115,12 +116,20 @@
     </div>
     <hr class="my-1 w-full border-0 border-t border-border" />
     <p class="text-[13px] leading-[1.45] text-text">
-      First-time mod installs need a one-time Steam login (steamcmd keeps its own
-      credentials, separate from the Steam client). This opens a terminal — complete
-      Steam Guard there once.
+      Mods download through the running Steam client — no SteamCMD, no separate login.
+      Just keep Steam open and logged in when you Play.
     </p>
-    <div class="flex items-center gap-2.5">
-      <button class="btn" onclick={setupLogin}>Set up Steam login</button>
+    <div class="flex flex-col gap-1.5">
+      <div class="flex items-center gap-2.5">
+        <button class="btn" type="button" onclick={cleanup} disabled={cleaning}>
+          {cleaning ? "Cleaning…" : "Clean up leftover mod downloads"}
+        </button>
+        {#if cleanupMsg}<span class="text-[13px] text-accent">{cleanupMsg}</span>{/if}
+      </div>
+      <span class="text-xs leading-[1.4] text-text">
+        Removes partial mod downloads left by a cancelled launch so Steam stops re-downloading
+        them. Close Steam first — it must be shut down for cleanup to take effect.
+      </span>
     </div>
     <hr class="my-1 w-full border-0 border-t border-border" />
     <h3 class="m-0 text-sm text-text-h">Diagnostics</h3>
@@ -131,11 +140,11 @@
           <span class="break-all text-text-h">{env.app_version}</span>
         </div>
         <div class="flex items-baseline gap-2.5 text-[13px]">
-          <span class="shrink-0 grow-0 basis-[130px] text-text">SteamCMD</span>
-          {#if env.steamcmd_installed}
-            <span class="break-all text-green-600 dark:text-green-400">✓ installed</span>
+          <span class="shrink-0 grow-0 basis-[130px] text-text">Steam running</span>
+          {#if env.steam_running}
+            <span class="break-all text-green-600 dark:text-green-400">✓ running</span>
           {:else}
-            <span class="break-all text-red-600 dark:text-red-400">✗ not found — install the steamcmd package</span>
+            <span class="break-all text-red-600 dark:text-red-400">✗ not running — open Steam and log in to download mods</span>
           {/if}
         </div>
         <div class="flex items-baseline gap-2.5 text-[13px]">
@@ -163,24 +172,7 @@
             <span class="break-all text-green-600 dark:text-green-400">{env.dayz_version}</span>
           </div>
         {/if}
-        <div class="flex items-baseline gap-2.5 text-[13px]">
-          <span class="shrink-0 grow-0 basis-[130px] text-text">Terminal for login</span>
-          {#if env.terminal}
-            <span class="break-all text-green-600 dark:text-green-400">✓ {env.terminal}</span>
-          {:else}
-            <span class="break-all text-red-600 dark:text-red-400">✗ none found</span>
-          {/if}
-        </div>
-        <div class="flex items-baseline gap-2.5 text-[13px]">
-          <span class="shrink-0 grow-0 basis-[130px] text-text">Steam account</span>
-          {#if env.steam_login && env.steam_login !== "anonymous"}
-            <span class="break-all text-green-600 dark:text-green-400">✓ {env.steam_login}</span>
-          {:else}
-            <span class="break-all text-red-600 dark:text-red-400">✗ not set</span>
-          {/if}
-        </div>
       </div>
-      <p class="text-[13px] leading-[1.45] text-text">Actual Steam login is verified when you Play.</p>
     {:else}
       <p class="text-[13px] leading-[1.45] text-text">Checking environment…</p>
     {/if}

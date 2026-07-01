@@ -3,13 +3,10 @@ use std::sync::Mutex;
 
 use dayz_core::launch::{build_launch_args, launch};
 use dayz_core::mods::{
-    dir_size_bytes, download_mod, ensure_mod_symlinks, lowercase_mod_tree, missing_mods,
-    scan_installed_mods,
+    dir_size_bytes, ensure_mod_symlinks, is_download_complete, lowercase_mod_tree, missing_mods,
+    remove_workshop_download, scan_installed_mods, workshop_download_url,
 };
-use dayz_core::process::{
-    detect_terminal, program_available, spawn_detached, terminal_login_command, RealRunner,
-    DEFAULT_TERMINALS,
-};
+use dayz_core::process::{spawn_detached, steam_running, RealRunner};
 use dayz_core::profile::{Profile, ServerRef};
 use dayz_core::servers::{
     apply_filter, cache_read, cache_write, dedupe_by_endpoint, fetch_mod_sizes, fetch_servers,
@@ -49,19 +46,6 @@ fn cmd_err(kind: &str, message: impl Into<String>, detail: Option<String>) -> Co
 fn to_command_error(e: &dayz_core::Error) -> CommandError {
     use dayz_core::Error as E;
     match e {
-        E::SteamCmdLogin { detail } => cmd_err(
-            "steam_login",
-            "Steam needs a one-time login. Open Settings and click \"Set up Steam login\" \
-             (or run `steamcmd +login <user> +quit` in a terminal and complete Steam Guard), \
-             then try again. Close the Steam client first.",
-            Some(detail.clone()),
-        ),
-        E::AnonymousAccount => cmd_err(
-            "steam_login_missing",
-            "Set your Steam account name in Settings before installing mods. \
-             Anonymous Steam accounts cannot download DayZ mods.",
-            None,
-        ),
         E::SteamNotFound => cmd_err(
             "steam_not_found",
             "Steam with DayZ installed was not found. Install Steam and DayZ, then restart dayzlin.",
@@ -106,6 +90,124 @@ fn home() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default()
+}
+
+/// Workshop ids dayzlin asked Steam to download but hasn't yet seen finish. Persisted so a
+/// download the user cancelled (or that failed) can be cleaned up later — Steam leaves such an
+/// item downloading forever otherwise (see [`remove_workshop_download`]). Lives next to
+/// `profile.json` in the app data dir.
+fn pending_downloads_path(app: &tauri::AppHandle) -> PathBuf {
+    data_dir(app).join("pending_downloads.json")
+}
+
+fn read_pending_downloads(path: &std::path::Path) -> Vec<u64> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Vec<u64>>(&s).ok())
+        .unwrap_or_default()
+}
+
+fn write_pending_downloads(path: &std::path::Path, ids: &[u64]) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string(ids) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+fn add_pending_download(path: &std::path::Path, id: u64) {
+    let mut ids = read_pending_downloads(path);
+    if !ids.contains(&id) {
+        ids.push(id);
+        write_pending_downloads(path, &ids);
+    }
+}
+
+fn remove_pending_download(path: &std::path::Path, id: u64) {
+    let mut ids = read_pending_downloads(path);
+    if ids.contains(&id) {
+        ids.retain(|x| *x != id);
+        write_pending_downloads(path, &ids);
+    }
+}
+
+/// Result of a cleanup pass over leftover (cancelled/failed) mod downloads.
+#[derive(Debug, serde::Serialize)]
+pub struct CleanupReport {
+    /// Steam was running, so nothing could be safely touched (Steam rewrites its manifest while up).
+    pub steam_running: bool,
+    /// Leftover downloads actually removed this pass.
+    pub removed: usize,
+    /// Leftover downloads still waiting to be cleaned (non-zero only when `steam_running`).
+    pub pending: usize,
+}
+
+/// Reconcile `pending_downloads.json` against the real workshop state. Ids that finished installing
+/// are simply forgotten. For the rest — genuine leftovers — cleanup only happens with Steam closed,
+/// since [`remove_workshop_download`] edits files Steam owns while running; otherwise we report the
+/// count so the UI can ask the user to close Steam.
+pub async fn reconcile_downloads(app: &tauri::AppHandle) -> CleanupReport {
+    let path = pending_downloads_path(app);
+    let ids = read_pending_downloads(&path);
+    if ids.is_empty() {
+        return CleanupReport {
+            steam_running: false,
+            removed: 0,
+            pending: 0,
+        };
+    }
+
+    let profile = Profile::load(&data_dir(app).join("profile.json"));
+    let Ok(dayz) = locate_dayz(&home(), profile.steam_root.as_deref()) else {
+        // Can't resolve DayZ right now; leave the list for a later attempt.
+        return CleanupReport {
+            steam_running: false,
+            removed: 0,
+            pending: ids.len(),
+        };
+    };
+
+    // Drop ids that actually completed (they're installed now — nothing to clean).
+    let workshop = dayz.workshop_dir();
+    let mut leftovers: Vec<u64> = ids
+        .into_iter()
+        .filter(|id| !is_download_complete(&workshop, *id))
+        .collect();
+
+    if steam_running(&RealRunner::new()).await {
+        // Persist just the still-incomplete leftovers; don't touch Steam's files while it's up.
+        write_pending_downloads(&path, &leftovers);
+        return CleanupReport {
+            steam_running: true,
+            removed: 0,
+            pending: leftovers.len(),
+        };
+    }
+
+    let mut removed = 0;
+    leftovers.retain(|id| match remove_workshop_download(&dayz, *id) {
+        Ok(()) => {
+            removed += 1;
+            false
+        }
+        Err(e) => {
+            log::warn!("failed to clean up leftover download {id}: {e}");
+            true
+        }
+    });
+    write_pending_downloads(&path, &leftovers);
+    CleanupReport {
+        steam_running: false,
+        removed,
+        pending: leftovers.len(),
+    }
+}
+
+/// Clean up leftover (cancelled/failed) mod downloads. Invoked from Settings and at startup.
+#[tauri::command]
+pub async fn cleanup_downloads(app: tauri::AppHandle) -> CleanupReport {
+    reconcile_downloads(&app).await
 }
 
 #[tauri::command]
@@ -196,7 +298,7 @@ enum LaunchProgress {
         total: usize,
         id: u64,
         name: String,
-        /// Bytes written to SteamCMD's staging dir so far (live, best-effort).
+        /// Bytes written to Steam's workshop staging dir so far (live, best-effort).
         bytes: u64,
         /// Total download size in bytes from Steam's workshop metadata, when known.
         /// `None` when the size lookup failed; the frontend then shows bytes alone.
@@ -230,8 +332,9 @@ pub async fn play(
     result
 }
 
-/// Cancel an in-progress launch: aborts the current SteamCMD download (the dropped future is
-/// killed via `kill_on_drop`) and makes `play` return a `cancelled` error.
+/// Cancel an in-progress launch: stops waiting on the current mod download and makes `play` return
+/// a `cancelled` error. Steam may finish an already-started download in the background (there's no
+/// child process we own to kill); it's simply reused on the next launch.
 #[tauri::command]
 pub fn cancel_play(state: State<'_, AppState>) {
     if let Some(token) = state.launch.lock().unwrap().as_ref() {
@@ -285,13 +388,20 @@ async fn run_play(
     let workshop = dayz.workshop_dir();
     let game = dayz.game_dir();
 
-    // Private HOME for every SteamCMD run so its bootstrap can't rewrite the Steam client's shared
-    // `libraryfolders.vdf` and drop the DayZ library (see `dayz_core::process::with_home`).
-    let steamcmd_home = data_dir(app).join("steamcmd-home");
-    std::fs::create_dir_all(&steamcmd_home).ok();
-
     let installed = scan_installed_mods(&workshop);
     let missing = missing_mods(&server.mods, &installed);
+
+    // Mods download by asking the running Steam client to fetch them (see `workshop_download_url`),
+    // so a live, logged-in client is required. Fail fast with actionable guidance rather than firing
+    // `steam://` URLs that would silently do nothing (or cold-start Steam mid-launch).
+    if !missing.is_empty() && !steam_running(&runner).await {
+        return Err(cmd_err(
+            "steam_not_running",
+            "Open Steam and log in, then try again — dayzlin downloads mods through the running \
+             Steam client.",
+            None,
+        ));
+    }
 
     // Best-effort total download sizes so the progress dialog can show "X MB of Y MB".
     // An empty map (network/parse failure) just falls back to a totals-less display.
@@ -317,21 +427,43 @@ async fn run_play(
             },
         )
         .ok();
-        // Race the download against cancellation while polling its on-disk staging dir for live
-        // byte progress. On cancel the download future is dropped, which kills the SteamCMD child
-        // (RealRunner sets `kill_on_drop`).
+        // Ask the running Steam client to fetch this item once, then watch the filesystem for it to
+        // land — there's no child process to await (contrast the old SteamCMD path). Steam writes
+        // in-progress data under `workshop/downloads/<id>` and only creates `content/<id>/meta.cpp`
+        // when the item is complete.
+        // Record the request before firing it: `workshop_download_item` is fire-and-forget and
+        // Steam keeps re-downloading a cancelled item, so we track it for later cleanup and only
+        // clear the entry once the item finishes landing.
+        let pending_path = pending_downloads_path(app);
+        add_pending_download(&pending_path, *id);
+        let url = workshop_download_url(*id);
+        spawn_detached("steam", &[url]).map_err(|e| to_command_error(&e))?;
+
         let downloads = dayz.workshop_downloads_dir().join(id.to_string());
-        let download = download_mod(&runner, &steamcmd_home, &profile.steam_login, &dayz.root, *id);
-        tokio::pin!(download);
         let mut tick = tokio::time::interval(std::time::Duration::from_millis(500));
-        tick.tick().await; // first tick is immediate; skip it (we just emitted bytes: 0)
-        let res = loop {
+        // First tick is immediate; skip it (we just emitted bytes: 0).
+        tick.tick().await;
+        // Guardrails so a stuck download never hangs the launch: bail if nothing starts downloading
+        // (Steam not ready / user dismissed the prompt) or if a started download stops making
+        // progress. Cancelling via the UI still returns promptly through the `select!` below.
+        let start = std::time::Instant::now();
+        let mut last_bytes = 0u64;
+        let mut last_progress = std::time::Instant::now();
+        const START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+        const STALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+        loop {
             tokio::select! {
-                r = &mut download => break r,
                 _ = token.cancelled() => {
+                    // No child to kill: Steam may finish the download in the background, which is
+                    // fine — it'll be reused next launch. Cancel just stops us waiting/launching.
                     return Err(cmd_err("cancelled", "Launch cancelled.", None));
                 }
                 _ = tick.tick() => {
+                    if is_download_complete(&workshop, *id) {
+                        remove_pending_download(&pending_path, *id);
+                        break;
+                    }
+                    let bytes = dir_size_bytes(&downloads);
                     app.emit(
                         "launch-progress",
                         LaunchProgress::Downloading {
@@ -339,30 +471,40 @@ async fn run_play(
                             total,
                             id: *id,
                             name: name.clone(),
-                            bytes: dir_size_bytes(&downloads),
+                            bytes,
                             total_bytes: sizes.get(id).copied(),
                         },
                     )
                     .ok();
+                    if bytes != last_bytes {
+                        last_bytes = bytes;
+                        last_progress = std::time::Instant::now();
+                    }
+                    if bytes == 0 && start.elapsed() > START_TIMEOUT {
+                        return Err(cmd_err(
+                            "steam_not_downloading",
+                            format!(
+                                "Steam didn't start downloading mod {id}. Make sure Steam is \
+                                 running and logged in, then try again."
+                            ),
+                            None,
+                        ));
+                    }
+                    if last_progress.elapsed() > STALL_TIMEOUT {
+                        return Err(cmd_err(
+                            "download_stalled",
+                            format!(
+                                "Download of mod {id} stalled. Check Steam for a paused or failed \
+                                 download (or free disk space), then try again."
+                            ),
+                            None,
+                        ));
+                    }
                 }
             }
-        };
-        res.map_err(|e| to_command_error(&e))?;
-        // Verify the mod actually landed on disk — SteamCMD can exit 0 without writing files,
-        // so don't trust the exit code alone. `download_mod` passes `+force_install_dir` so
-        // content lands in this same `workshop` tree; if it's still missing the most likely
-        // cause is an incomplete SteamCMD login (cached credentials expired).
-        if !workshop.join(id.to_string()).join("meta.cpp").exists() {
-            return Err(cmd_err(
-                "mod_missing",
-                format!(
-                    "Mod {id} downloaded but its files weren't found. Open Settings, confirm \
-                     SteamCMD is installed and you've completed \"Set up Steam login\", then \
-                     try again."
-                ),
-                None,
-            ));
         }
+        // `is_download_complete` already confirmed `content/<id>/meta.cpp` exists, so the item is
+        // fully on disk in the same `workshop` tree we link from below.
     }
 
     app.emit("launch-progress", LaunchProgress::Launching).ok();
@@ -415,45 +557,18 @@ pub fn toggle_favorite(server_ref: ServerRef, app: tauri::AppHandle) -> Profile 
     profile
 }
 
-/// Open a terminal running an interactive `steamcmd +login <user>` for first-time auth.
-#[tauri::command]
-pub fn setup_steam_login(app: tauri::AppHandle) -> Result<(), CommandError> {
-    let profile = Profile::load(&data_dir(&app).join("profile.json"));
-    if profile.steam_login.is_empty() || profile.steam_login == "anonymous" {
-        return Err(to_command_error(&dayz_core::Error::AnonymousAccount));
-    }
-    let term = detect_terminal(DEFAULT_TERMINALS).ok_or_else(|| {
-        cmd_err(
-            "no_terminal",
-            format!(
-                "No terminal emulator was found. Open one yourself and run: \
-                 steamcmd +login {} +quit",
-                profile.steam_login
-            ),
-            None,
-        )
-    })?;
-    // Same isolated HOME the mod downloads use, so the cached credentials land where SteamCMD will
-    // later look for them (see `dayz_core::process::with_home`).
-    let steamcmd_home = data_dir(&app).join("steamcmd-home");
-    std::fs::create_dir_all(&steamcmd_home).ok();
-    let (prog, args) = terminal_login_command(&term, &steamcmd_home, &profile.steam_login);
-    spawn_detached(&prog, &args).map_err(|e| to_command_error(&e))
-}
-
-/// Diagnostics for the Settings tab: app version, dependency availability, and Steam install.
+/// Diagnostics for the Settings tab: app version, Steam client state, and Steam/DayZ install.
 #[derive(Debug, serde::Serialize)]
 pub struct EnvReport {
     pub app_version: String,
-    pub steamcmd_installed: bool,
-    pub terminal: Option<String>,
+    /// Whether the Steam client is running — mod downloads are driven through it.
+    pub steam_running: bool,
     pub steam_found: bool,
     pub steam_kind: Option<String>,
     pub steam_root: Option<String>,
     pub dayz_installed: bool,
     pub dayz_path: Option<String>,
     pub dayz_version: Option<String>,
-    pub steam_login: String,
 }
 
 /// Probe the environment so the user can see whether everything needed to install mods and
@@ -461,8 +576,7 @@ pub struct EnvReport {
 #[tauri::command]
 pub async fn check_environment(app: tauri::AppHandle) -> EnvReport {
     let runner = RealRunner::new();
-    let steamcmd_installed = program_available(&runner, "steamcmd").await;
-    let terminal = detect_terminal(DEFAULT_TERMINALS);
+    let steam_is_running = steam_running(&runner).await;
     let profile = Profile::load(&data_dir(&app).join("profile.json"));
 
     let (steam_found, steam_kind, steam_root) = match SteamInstall::detect_in(&home()) {
@@ -488,15 +602,13 @@ pub async fn check_environment(app: tauri::AppHandle) -> EnvReport {
 
     EnvReport {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
-        steamcmd_installed,
-        terminal,
+        steam_running: steam_is_running,
         steam_found,
         steam_kind,
         steam_root,
         dayz_installed,
         dayz_path,
         dayz_version,
-        steam_login: profile.steam_login,
     }
 }
 
@@ -506,24 +618,14 @@ mod tests {
     use dayz_core::Error;
 
     #[test]
-    fn maps_steam_login_error_with_detail() {
-        let ce = to_command_error(&Error::SteamCmdLogin {
-            detail: "FAILED login with result code Invalid Password".into(),
-        });
-        assert_eq!(ce.kind, "steam_login");
-        assert!(ce.message.contains("Set up Steam login"));
-        assert!(ce.detail.unwrap().contains("Invalid Password"));
-    }
-
-    #[test]
-    fn maps_anonymous_and_steam_not_found() {
-        assert_eq!(
-            to_command_error(&Error::AnonymousAccount).kind,
-            "steam_login_missing"
-        );
+    fn maps_steam_not_found_and_dayz_not_found() {
         assert_eq!(
             to_command_error(&Error::SteamNotFound).kind,
             "steam_not_found"
+        );
+        assert_eq!(
+            to_command_error(&Error::DayzNotFound).kind,
+            "dayz_not_found"
         );
     }
 }

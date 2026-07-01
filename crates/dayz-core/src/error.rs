@@ -14,10 +14,6 @@ pub enum Error {
         status: i32,
         stderr: String,
     },
-    #[error("steam account is anonymous; cannot install or update mods")]
-    AnonymousAccount,
-    #[error("steamcmd login failed; re-login required")]
-    SteamCmdLogin { detail: String },
     #[error("mod {0} is not installed")]
     ModNotInstalled(u64),
     #[error("network error: {0}")]

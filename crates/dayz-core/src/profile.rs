@@ -20,8 +20,6 @@ impl ServerRef {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Profile {
     #[serde(default)]
-    pub steam_login: String,
-    #[serde(default)]
     pub player: String,
     #[serde(default)]
     pub steam_root: Option<String>,

@@ -27,7 +27,7 @@ finish-args:
   - --socket=fallback-x11
   - --socket=wayland
   - --device=dri
-  # host-spawn Steam / SteamCMD / ping:
+  # host-spawn Steam / ping:
   - --talk-name=org.freedesktop.Flatpak
   # read/write the Steam library + workshop + game dirs (both install shapes):
   - --filesystem=~/.steam:rw
@@ -41,9 +41,14 @@ modules:
       build-args:
         - --share=network
     build-commands:
+      # Build via the Tauri CLI so the app is compiled in *production* mode and embeds the
+      # frontend. A bare `cargo build` leaves Tauri in dev mode, where the webview loads the
+      # Vite dev server (http://localhost:5173) — which isn't running in the sandbox, so the
+      # window just shows "Could not connect to localhost: Connection refused". `tauri build`
+      # runs the frontend build (beforeBuildCommand) itself; `--no-bundle` skips the
+      # AppImage/deb/rpm bundlers (we only need the raw binary for the Flatpak).
       - npm ci
-      - npm run build
-      - cargo build --release -p dayzlin
+      - npm run tauri build -- --no-bundle
       - install -Dm755 target/release/dayzlin /app/bin/dayzlin
     sources:
       - type: dir

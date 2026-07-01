@@ -36,8 +36,8 @@ impl SteamInstall {
 }
 
 /// A Steam library folder that actually contains a DayZ install. `root` is the library root
-/// (the directory containing `steamapps`, e.g. `/mnt/FAST/SteamLibrary`), which is also the
-/// `+force_install_dir` base handed to SteamCMD so downloaded content lands in this same tree.
+/// (the directory containing `steamapps`, e.g. `/mnt/FAST/SteamLibrary`); the Steam client
+/// downloads workshop content into this tree, which is where we scan for and link mods.
 #[derive(Debug, Clone)]
 pub struct DayzInstall {
     pub root: PathBuf,
@@ -54,12 +54,22 @@ impl DayzInstall {
             .join(DAYZ_APP_ID.to_string())
     }
 
-    /// Staging directory SteamCMD writes an in-progress workshop download into (before moving the
-    /// finished item into [`workshop_dir`]). Polling its size gives live download progress.
+    /// Staging directory the Steam client writes an in-progress workshop download into (before
+    /// moving the finished item into [`workshop_dir`]). Polling its size gives live download progress.
     pub fn workshop_downloads_dir(&self) -> PathBuf {
         self.root
             .join("steamapps/workshop/downloads")
             .join(DAYZ_APP_ID.to_string())
+    }
+
+    /// The `appworkshop_<appid>.acf` manifest where Steam records workshop install/download state
+    /// (`NeedsDownload`, `WorkshopItemsInstalled`, `WorkshopItemDetails`). A download requested via
+    /// `+workshop_download_item` — which never subscribes — leaves a pending entry here that
+    /// survives cancelling, so cleaning up an unwanted download means editing this file.
+    pub fn workshop_manifest_path(&self) -> PathBuf {
+        self.root
+            .join("steamapps/workshop")
+            .join(format!("appworkshop_{DAYZ_APP_ID}.acf"))
     }
 }
 

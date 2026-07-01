@@ -20,15 +20,15 @@ export function closeDialog() {
 
 function titleFor(kind?: string): string {
   switch (kind) {
-    case "steam_login":
-    case "steam_login_missing":
-      return "Steam login required";
+    case "steam_not_running":
+      return "Steam isn't running";
+    case "steam_not_downloading":
+    case "download_stalled":
+      return "Mod download problem";
     case "steam_not_found":
       return "Steam not found";
     case "network":
       return "Network error";
-    case "no_terminal":
-      return "No terminal found";
     default:
       return "Error";
   }

@@ -17,7 +17,16 @@ export default defineConfig({
     hmr: host
       ? { protocol: "ws", host, port: 1421 }
       : undefined,
-    // Don't let Vite watch the Rust side.
-    watch: { ignored: ["**/src-tauri/**"] },
+    // Don't watch the Rust side or local build-output trees. `build-dir/` (the Flatpak builder
+    // output) captures a sandbox filesystem with `var/run -> /run`, whose `udev/watch/*` circular
+    // symlinks make chokidar throw ELOOP and kill the dev server — so it must be ignored.
+    watch: {
+      ignored: [
+        "**/src-tauri/**",
+        "**/target/**",
+        "**/build-dir/**",
+        "**/.flatpak-builder/**",
+      ],
+    },
   },
 });

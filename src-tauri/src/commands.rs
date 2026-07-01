@@ -12,7 +12,7 @@ use dayz_core::servers::{
     apply_filter, cache_read, cache_write, dedupe_by_endpoint, fetch_mod_sizes, fetch_servers,
     fuzzy_search, Server, ServerFilter,
 };
-use dayz_core::steam::{app_launch_ready, dayz_app_state, locate_dayz, SteamInstall};
+use dayz_core::steam::{app_launch_ready, dayz_app_state, library_root, locate_dayz, SteamInstall};
 use dayz_core::version::{read_installed_version, version_match};
 use tauri::{Emitter, Manager, State};
 use tokio_util::sync::CancellationToken;
@@ -622,10 +622,52 @@ pub async fn check_environment(app: tauri::AppHandle) -> EnvReport {
     }
 }
 
+/// A document-portal FUSE path: `/run/user/<uid>/doc/...` (what the file chooser hands back) or the
+/// sandbox-internal `/run/flatpak/doc/...`.
+fn is_document_portal_path(path: &str) -> bool {
+    path.starts_with("/run/flatpak/doc/")
+        || path
+            .strip_prefix("/run/user/")
+            .and_then(|rest| rest.split_once('/'))
+            .is_some_and(|(_uid, rest)| rest.starts_with("doc/"))
+}
+
+/// Turn a folder the user picked into a stored `steam_root`. In a Flatpak the file chooser can't
+/// reach a library on e.g. `/mnt`, so the document portal re-exports it under
+/// `/run/user/<uid>/doc/<id>/...` and hands back that portal path — per-session and useless as a
+/// persisted override. Recover the real host path from the `user.document-portal.host-path` xattr
+/// the portal FUSE exposes, then normalize to a Steam library root (the picker usually lands on the
+/// game dir). Outside a sandbox — or when the attr is absent — the input is just normalized.
+#[tauri::command]
+pub fn resolve_dayz_path(path: String) -> String {
+    let resolved = if is_document_portal_path(&path) {
+        xattr::get(&path, "user.document-portal.host-path")
+            .ok()
+            .flatten()
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+            .unwrap_or(path)
+    } else {
+        path
+    };
+    library_root(std::path::Path::new(&resolved))
+        .to_string_lossy()
+        .into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use dayz_core::Error;
+
+    #[test]
+    fn detects_document_portal_paths() {
+        assert!(is_document_portal_path(
+            "/run/user/1000/doc/kByBWbtRKRkn6SMgk1cpNg/DayZ"
+        ));
+        assert!(is_document_portal_path("/run/flatpak/doc/abc123/DayZ"));
+        assert!(!is_document_portal_path("/mnt/FAST/SteamLibrary"));
+        assert!(!is_document_portal_path("/run/user/1000/foo/bar"));
+    }
 
     #[test]
     fn maps_steam_not_found_and_dayz_not_found() {

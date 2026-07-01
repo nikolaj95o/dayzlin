@@ -11,8 +11,7 @@
 # NOTE: this manifest builds with network access (build-args: --share=network),
 # which is fine for local/GitHub-release builds. A Flathub submission must instead
 # vendor sources offline (flatpak-cargo-generator + flatpak-node-generator) and
-# drop the --share=network. A .desktop file, icon, and AppStream metainfo are also
-# required for Flathub / desktop-menu integration (follow-up).
+# drop the --share=network.
 id: io.github.nikolaj95o.dayzlin
 runtime: org.gnome.Platform
 runtime-version: "50"
@@ -29,9 +28,10 @@ finish-args:
   - --device=dri
   # host-spawn Steam / ping:
   - --talk-name=org.freedesktop.Flatpak
-  # read/write the Steam library + workshop + game dirs (both install shapes):
-  - --filesystem=~/.steam:rw
-  - --filesystem=~/.local/share/Steam:rw
+  # read/write Steam libraries wherever they live — the game/workshop/mod dirs can be on any
+  # mount (e.g. /mnt/FAST/SteamLibrary), and a narrower set would break auto-detect and mod
+  # linking for those. `host` excludes ~/.var/app, so grant Flatpak Steam explicitly:
+  - --filesystem=host:rw
   - --filesystem=~/.var/app/com.valvesoftware.Steam:rw
 modules:
   - name: dayzlin
@@ -50,6 +50,12 @@ modules:
       - npm ci
       - npm run tauri build -- --no-bundle
       - install -Dm755 "${CARGO_TARGET_DIR:-target}/release/dayzlin" /app/bin/dayzlin
+      # Desktop integration + AppStream metainfo. flatpak-builder runs appstream-compose over
+      # /app/share/metainfo at the end of the build, which is what makes `flatpak list --app`
+      # report a version (from the metainfo <releases>).
+      - install -Dm644 flatpak/io.github.nikolaj95o.dayzlin.desktop /app/share/applications/io.github.nikolaj95o.dayzlin.desktop
+      - install -Dm644 flatpak/io.github.nikolaj95o.dayzlin.metainfo.xml /app/share/metainfo/io.github.nikolaj95o.dayzlin.metainfo.xml
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/io.github.nikolaj95o.dayzlin.png
     sources:
       - type: dir
         path: ..

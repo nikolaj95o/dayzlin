@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=dayzlin
+GenericName=DayZ Launcher
+Comment=Browse and launch DayZ servers on Linux
+Exec=dayzlin
+Icon=io.github.nikolaj95o.dayzlin
+Terminal=false
+Categories=Game;
+Keywords=DayZ;Steam;server;launcher;

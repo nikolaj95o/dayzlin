@@ -28,3 +28,4 @@ tauri-plugin-dialog = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+xattr = "1"

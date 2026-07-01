@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.nikolaj95o.dayzlin</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>dayzlin</name>
+  <summary>Browse and launch DayZ servers on Linux</summary>
+  <description>
+    <p>
+      dayzlin is a DayZ launcher for Linux. It browses the live server list, downloads
+      the mods a server requires through your running Steam client, links them into the
+      game, and launches DayZ — so you can join modded servers without hand-managing
+      workshop content.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.nikolaj95o.dayzlin.desktop</launchable>
+  <url type="homepage">https://github.com/nikolaj95o/dayzlin</url>
+  <url type="bugtracker">https://github.com/nikolaj95o/dayzlin/issues</url>
+  <developer id="io.github.nikolaj95o">
+    <name>Nikola Jovanović</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.2" date="2026-07-01"/>
+  </releases>
+</component>

@@ -97,3 +97,5 @@ export const checkEnvironment = () =>
   invoke<EnvReport>("check_environment");
 export const cleanupDownloads = () =>
   invoke<CleanupReport>("cleanup_downloads");
+export const resolveDayzPath = (path: string) =>
+  invoke<string>("resolve_dayz_path", { path });

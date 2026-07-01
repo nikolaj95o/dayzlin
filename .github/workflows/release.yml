@@ -100,6 +100,15 @@ jobs:
               {"CARGO_HOME":"/cargo-cache/cargo","CARGO_TARGET_DIR":"/cargo-cache/target","npm_config_cache":"/cargo-cache/npm"}
           ' flatpak/io.github.nikolaj95o.dayzlin.yml
 
+      # Stamp the metainfo <release> with the pushed tag so `flatpak list --app` reports the
+      # released version. The committed seed keeps local test builds valid; this overwrites it
+      # (CI only — never committed) so the published build always matches the tag.
+      - name: Stamp metainfo release from tag
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          sed -i -E "s|<release version=\"[^\"]*\" date=\"[^\"]*\"|<release version=\"$VER\" date=\"$(date +%F)\"|" \
+            flatpak/io.github.nikolaj95o.dayzlin.metainfo.xml
+
       - name: Build + sign into the OSTree repo
         run: |
           flatpak-builder --user --force-clean \

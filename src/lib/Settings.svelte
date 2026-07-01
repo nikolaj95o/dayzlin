@@ -4,6 +4,7 @@
     saveProfile,
     checkEnvironment,
     cleanupDownloads,
+    resolveDayzPath,
     type Profile,
     type EnvReport,
   } from "./api";
@@ -48,7 +49,9 @@
         title: "Select your Steam library folder (contains steamapps)",
       });
       if (typeof dir === "string") {
-        profile.steam_root = dir;
+        // In a Flatpak the picker returns a document-portal path (/run/user/.../doc/...) for
+        // folders outside the sandbox; resolve it back to the real host library root before saving.
+        profile.steam_root = await resolveDayzPath(dir);
         await saveP();
       }
     } catch (e) {

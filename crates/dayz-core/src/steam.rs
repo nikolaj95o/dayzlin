@@ -145,65 +145,35 @@ fn library_candidates(home: &Path) -> Vec<PathBuf> {
     ]
 }
 
-/// Scan removable/extra mount points for a Steam library containing DayZ. This is the last
-/// resort for libraries Steam has "orphaned" — present on disk but listed in no `*.vdf`. For each
-/// base (e.g. `/mnt`) we look at each mounted drive and one level of children, so both
-/// `<base>/<drive>/steamapps/...` and `<base>/<drive>/SteamLibrary/steamapps/...` are found.
-/// Bounded to that depth and to cheap `is_dir` checks, so it stays fast.
-fn scan_mounts_for_dayz(bases: &[PathBuf]) -> Vec<PathBuf> {
-    let has_dayz = |root: &Path| root.join("steamapps/common/DayZ").is_dir();
-    let mut found = Vec::new();
-    for base in bases {
-        let Ok(drives) = fs::read_dir(base) else {
-            continue;
-        };
-        for drive in drives.flatten().map(|e| e.path()) {
-            if has_dayz(&drive) {
-                found.push(drive.clone());
-            }
-            let Ok(children) = fs::read_dir(&drive) else {
-                continue;
-            };
-            for child in children.flatten().map(|e| e.path()) {
-                if has_dayz(&child) {
-                    found.push(child);
-                }
-            }
+/// Normalize a user-supplied path to a Steam *library root* (the dir containing `steamapps`).
+/// The folder picker and manual entry often land on a deeper path — the game dir
+/// (`<lib>/steamapps/common/DayZ`) or the `<lib>/steamapps` dir — so strip those suffixes back
+/// to the library root. Any other path is returned unchanged.
+pub fn library_root(path: &Path) -> PathBuf {
+    if path.ends_with("steamapps/common/DayZ") {
+        // <lib>/steamapps/common/DayZ -> <lib>
+        if let Some(lib) = path.parent().and_then(Path::parent).and_then(Path::parent) {
+            return lib.to_path_buf();
         }
     }
-    found
-}
-
-/// Default mount bases to scan for orphaned Steam libraries. `$USER` is derived from `home`'s
-/// final component so this matches the running user's removable-media paths.
-fn default_mount_bases(home: &Path) -> Vec<PathBuf> {
-    let mut bases = vec![PathBuf::from("/mnt"), PathBuf::from("/media")];
-    if let Some(user) = home.file_name() {
-        bases.push(Path::new("/media").join(user));
-        bases.push(Path::new("/run/media").join(user));
+    if path.ends_with("steamapps") {
+        if let Some(lib) = path.parent() {
+            return lib.to_path_buf();
+        }
     }
-    bases
+    path.to_path_buf()
 }
 
 /// Locate a DayZ install across all Steam libraries. Resolution order: a non-empty
-/// `override_root` (the user-configured library folder) wins when it contains DayZ; then every
-/// library from `library_candidates` (vdf + default Steam roots); then a scan of mounted drives
-/// for orphaned libraries Steam no longer tracks. Errors with `DayzNotFound` if none contain DayZ.
+/// `override_root` (the user-configured library folder, normalized via [`library_root`]) wins when
+/// it contains DayZ; then every library from `library_candidates` (vdf + default Steam roots).
+/// Errors with `DayzNotFound` if none contain DayZ. Libraries Steam knows about are always listed
+/// in a `libraryfolders.vdf`, so we rely on those files rather than scanning mounted drives.
 pub fn locate_dayz(home: &Path, override_root: Option<&str>) -> Result<DayzInstall, Error> {
-    locate_dayz_in(home, override_root, &default_mount_bases(home))
-}
-
-/// Inner implementation of [`locate_dayz`] with injectable mount `bases`, so tests can scan a
-/// tempdir instead of the real `/mnt`.
-fn locate_dayz_in(
-    home: &Path,
-    override_root: Option<&str>,
-    mount_bases: &[PathBuf],
-) -> Result<DayzInstall, Error> {
     let has_dayz = |root: &Path| root.join("steamapps/common/DayZ").is_dir();
 
     if let Some(ov) = override_root.map(str::trim).filter(|s| !s.is_empty()) {
-        let root = PathBuf::from(ov);
+        let root = library_root(Path::new(ov));
         if has_dayz(&root) {
             return Ok(DayzInstall { root });
         }
@@ -212,9 +182,6 @@ fn locate_dayz_in(
         if has_dayz(&root) {
             return Ok(DayzInstall { root });
         }
-    }
-    if let Some(root) = scan_mounts_for_dayz(mount_bases).into_iter().next() {
-        return Ok(DayzInstall { root });
     }
     Err(Error::DayzNotFound)
 }
@@ -314,6 +281,25 @@ mod tests {
     }
 
     #[test]
+    fn override_pointing_at_game_dir_resolves_to_library_root() {
+        let home = tempdir().unwrap();
+        let lib = tempdir().unwrap();
+        make_dayz(lib.path());
+        // The folder picker often lands on the game dir; it must resolve back to the library root.
+        let game_dir = lib.path().join("steamapps/common/DayZ");
+        let dayz = locate_dayz(home.path(), Some(game_dir.to_str().unwrap())).unwrap();
+        assert_eq!(dayz.root, lib.path());
+    }
+
+    #[test]
+    fn library_root_strips_known_suffixes() {
+        let lib = PathBuf::from("/mnt/FAST/SteamLibrary");
+        assert_eq!(library_root(&lib.join("steamapps/common/DayZ")), lib);
+        assert_eq!(library_root(&lib.join("steamapps")), lib);
+        assert_eq!(library_root(&lib), lib);
+    }
+
+    #[test]
     fn falls_back_to_default_locations_without_vdf() {
         let home = tempdir().unwrap();
         make_dayz(&home.path().join(".local/share/Steam"));
@@ -325,41 +311,10 @@ mod tests {
     fn dayz_not_found_when_absent() {
         let home = tempdir().unwrap();
         make_steam(home.path(), ".local/share/Steam"); // steam present, but no DayZ
-                                                       // Empty mount bases so the scan can't reach the real `/mnt`.
         assert!(matches!(
-            locate_dayz_in(home.path(), None, &[]),
+            locate_dayz(home.path(), None),
             Err(crate::Error::DayzNotFound)
         ));
-    }
-
-    #[test]
-    fn locate_falls_through_to_mount_scan() {
-        let home = tempdir().unwrap(); // no vdf, no DayZ in defaults
-        let base = tempdir().unwrap();
-        let lib = base.path().join("FAST/SteamLibrary");
-        make_dayz(&lib);
-        let dayz = locate_dayz_in(home.path(), None, &[base.path().to_path_buf()]).unwrap();
-        assert_eq!(dayz.root, lib);
-    }
-
-    #[test]
-    fn scans_mounts_for_orphaned_library() {
-        // Mimic `/mnt/FAST/SteamLibrary/steamapps/common/DayZ`.
-        let base = tempdir().unwrap();
-        let lib = base.path().join("FAST/SteamLibrary");
-        make_dayz(&lib);
-        let found = scan_mounts_for_dayz(&[base.path().to_path_buf()]);
-        assert_eq!(found, vec![lib]);
-    }
-
-    #[test]
-    fn scan_finds_library_at_drive_root() {
-        // Library sits directly on the drive: `/mnt/DRIVE/steamapps/common/DayZ`.
-        let base = tempdir().unwrap();
-        let drive = base.path().join("DRIVE");
-        make_dayz(&drive);
-        let found = scan_mounts_for_dayz(&[base.path().to_path_buf()]);
-        assert_eq!(found, vec![drive]);
     }
 
     #[test]

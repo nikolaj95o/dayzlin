@@ -6,11 +6,17 @@
     onSelect,
     isFavorite = () => false,
     onToggleFavorite = () => {},
+    isOffline = () => false,
+    emptyLabel = "No servers",
   }: {
     servers: Server[];
     onSelect: (s: Server) => void;
     isFavorite?: (s: Server) => boolean;
     onToggleFavorite?: (s: Server) => void;
+    // Marks a row whose live data couldn't be resolved (saved server not currently online):
+    // its columns render as "—" and Play is replaced by an OFFLINE badge.
+    isOffline?: (s: Server) => boolean;
+    emptyLabel?: string;
   } = $props();
 
   // Row virtualization: only the rows in (and just around) the viewport are in the DOM, so the
@@ -131,22 +137,26 @@
   </thead>
   <tbody>
     {#if sorted.length === 0}
-      <tr><td colspan="6" class="p-6 text-center text-text">No servers</td></tr>
+      <tr><td colspan="6" class="p-6 text-center text-text">{emptyLabel}</td></tr>
     {:else}
       {#if start > 0}
         <!-- Height must sit on a cell: WebKit ignores `height` on a cell-less <tr>. -->
         <tr aria-hidden="true"><td colspan="6" style="height:{start * ROW_H}px;padding:0;border:0"></td></tr>
       {/if}
       {#each slice as s (s.ip + ":" + s.game_port)}
+      {@const offline = isOffline(s)}
       <!-- Fixed 44px row height (h-11) is required by the virtualization math (ROW_H = 44). -->
-      <tr class="box-border h-11 hover:bg-bg-alt">
+      <tr class="box-border h-11 hover:bg-bg-alt {offline ? 'opacity-50' : ''}">
         <td class="max-w-[380px] overflow-hidden border-b border-border px-2.5 py-[7px] font-medium text-ellipsis whitespace-nowrap text-text-h">{s.name}</td>
-        <td class="border-b border-border px-2.5 py-[7px]">{s.map}</td>
-        <td class="border-b border-border px-2.5 py-[7px]">{s.players}/{s.max_players}</td>
-        <td class="border-b border-border px-2.5 py-[7px]">{s.mods.length}</td>
-        <td class="border-b border-border px-2.5 py-[7px]">{s.first_person ? "1PP" : "3PP"}</td>
+        <td class="border-b border-border px-2.5 py-[7px]">{offline ? "—" : s.map}</td>
+        <td class="border-b border-border px-2.5 py-[7px]">{offline ? "—" : `${s.players}/${s.max_players}`}</td>
+        <td class="border-b border-border px-2.5 py-[7px]">{offline ? "—" : s.mods.length}</td>
+        <td class="border-b border-border px-2.5 py-[7px]">{offline ? "—" : s.first_person ? "1PP" : "3PP"}</td>
         <td class="flex items-center gap-1.5 border-b border-border px-2.5 py-[7px] whitespace-nowrap">
-          {#if s.version_match === false}
+          {#if offline}
+            <!-- Saved server that isn't in the current live list; can't be launched. -->
+            <span class="inline-flex h-[30px] items-center rounded-[4px] border border-border px-2 text-[0.7em] font-semibold tracking-[0.03em] whitespace-nowrap text-text opacity-75" title="Server is offline or not in the current list">OFFLINE</span>
+          {:else if s.version_match === false}
             <!-- Shown in place of Play when the server's build doesn't match the installed DayZ. -->
             <span class="inline-flex h-[30px] items-center rounded-[4px] border border-border px-2 text-[0.7em] font-semibold tracking-[0.03em] whitespace-nowrap text-text opacity-75" title="Server build {s.version} differs from your installed DayZ">NOT SAME VER</span>
           {:else}
@@ -165,6 +175,8 @@
               <path
                 d="M8 1.5l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.8 4.2 13.8l.7-4.3-3.1-3 4.3-.6z"
               />
+              <!-- Diagonal slash over a filled star: signals that clicking removes the favorite. -->
+              {#if isFavorite(s)}<path class="fill-none [stroke-width:1.5]" d="M3 13L13 3" />{/if}
             </svg>
           </button>
         </td>

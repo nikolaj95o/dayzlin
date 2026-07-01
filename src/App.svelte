@@ -25,6 +25,9 @@
 
   let view = $state<View>("servers");
   let servers = $state<Server[]>([]);
+  // Unfiltered master list, used to resolve saved favorite/history ServerRefs to full live
+  // servers regardless of the Servers-tab filter. Refreshed alongside `servers` in load().
+  let allServers = $state<Server[]>([]);
   let profile = $state<Profile | null>(null);
   let query = $state("");
   let filter = $state<ServerFilter>({
@@ -39,11 +42,25 @@
   });
   let status = $state("");
 
+  // Matches every server (no filtering); used to resolve saved favorites/history to live data.
+  const ALL_SERVERS: ServerFilter = {
+    map: null,
+    first_person_only: false,
+    third_person_only: false,
+    no_password: false,
+    max_mods: null,
+    min_players: null,
+    has_slots: false,
+    same_version_only: false,
+  };
+
   async function load(refresh = false, background = false): Promise<boolean> {
     status = background ? "Refreshing…" : "Loading servers…";
     try {
       const stale = await listServers(refresh);
       servers = await filterServers(filter, query);
+      // A fully-permissive query for the favorites/history resolver — every cached server.
+      allServers = await filterServers(ALL_SERVERS, "");
       status = `${servers.length} servers`;
       return stale;
     } catch (e) {
@@ -97,16 +114,35 @@
     profile = await toggleFavorite({ name: s.name, ip: s.ip, port: s.game_port });
   }
 
-  // Resolve a saved favorite/history entry back to a full live server, then launch it.
-  function playRef(r: ServerRef) {
-    const full = servers.find((s) => s.ip === r.ip && s.game_port === r.port);
-    if (full) onSelect(full);
-    else status = `${r.name} is offline or not in the current list`;
+  // Resolve saved ServerRefs to full live servers so Favorites/History can reuse ServerTable.
+  // Refs not in the live list become a placeholder server flagged offline (no live columns,
+  // no Play) — its real name/ip/port are kept so removing/keying still works.
+  const key = (ip: string, port: number) => `${ip}:${port}`;
+  const liveByKey = $derived(
+    new Map(allServers.map((s) => [key(s.ip, s.game_port), s])),
+  );
+  function resolve(refs: ServerRef[]): Server[] {
+    return refs.map(
+      (r) =>
+        liveByKey.get(key(r.ip, r.port)) ?? {
+          name: r.name,
+          ip: r.ip,
+          game_port: r.port,
+          players: 0,
+          max_players: 0,
+          map: "",
+          time: "",
+          first_person: false,
+          password: false,
+          mods: [],
+          version: "",
+          version_match: null,
+        },
+    );
   }
-
-  async function removeFavorite(r: ServerRef) {
-    profile = await toggleFavorite(r);
-  }
+  const favoriteServers = $derived(resolve(profile?.favorites ?? []));
+  const historyServers = $derived(resolve(profile?.history ?? []));
+  const isOffline = (s: Server) => !liveByKey.has(key(s.ip, s.game_port));
 
   async function refreshProfile() {
     profile = await getProfile();
@@ -158,34 +194,10 @@
 
   {#if view === "settings"}
     <Settings />
-  {:else if view === "favorites" || view === "history"}
-    <ul class="mt-2 list-none p-0">
-      {#each (view === "favorites" ? profile?.favorites : profile?.history) ?? [] as r}
-        <li class="flex justify-between gap-4 border-b border-border px-2.5 py-2">
-          <span class="font-medium text-text-h">{r.name}</span>
-          <span class="mr-auto font-mono text-[13px]">{r.ip}:{r.port}</span>
-          <span class="flex gap-1.5">
-            <button class="icon-btn-accent" title="Play" aria-label="Play" onclick={() => playRef(r)}>
-              <svg class="h-4 w-4 fill-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" /></svg>
-            </button>
-            {#if view === "favorites"}
-              <button
-                class="icon-btn"
-                title="Remove from favorites"
-                aria-label="Remove from favorites"
-                onclick={() => removeFavorite(r)}
-              >
-                <svg class="h-4 w-4 fill-none stroke-current [stroke-linecap:round] [stroke-width:1.5]" viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M4 4l8 8M12 4l-8 8" />
-                </svg>
-              </button>
-            {/if}
-          </span>
-        </li>
-      {:else}
-        <li class="flex justify-center border-b border-border px-2.5 py-2 text-text">No {view} yet</li>
-      {/each}
-    </ul>
+  {:else if view === "favorites"}
+    <ServerTable servers={favoriteServers} {onSelect} {isFavorite} {onToggleFavorite} {isOffline} emptyLabel="No favorites yet" />
+  {:else if view === "history"}
+    <ServerTable servers={historyServers} {onSelect} {isFavorite} {onToggleFavorite} {isOffline} emptyLabel="No history yet" />
   {/if}
 </main>
 

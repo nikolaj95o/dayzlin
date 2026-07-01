@@ -71,11 +71,7 @@ pub fn missing_mods(required: &[ServerMod], installed: &[InstalledMod]) -> Vec<u
 fn relative_link_target(link_dir: &Path, target: &Path) -> PathBuf {
     let from: Vec<Component> = link_dir.components().collect();
     let to: Vec<Component> = target.components().collect();
-    let common = from
-        .iter()
-        .zip(&to)
-        .take_while(|(a, b)| a == b)
-        .count();
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
     let mut rel = PathBuf::new();
     for _ in common..from.len() {
         rel.push("..");
@@ -152,7 +148,11 @@ pub fn ensure_mod_symlinks(game_dir: &Path, workshop_dir: &Path, ids: &[u64]) ->
         }
         #[cfg(unix)]
         std::os::unix::fs::symlink(&target, &link)?;
-        log::info!("created mod symlink {} -> {}", link.display(), target.display());
+        log::info!(
+            "created mod symlink {} -> {}",
+            link.display(),
+            target.display()
+        );
     }
     Ok(())
 }
@@ -302,7 +302,10 @@ fn strip_workshop_item(acf: &str, id: u64) -> String {
             let key = pending_key.take().unwrap_or_default();
             let held = pending_line.take();
             let entering_target = skip_depth.is_none()
-                && stack.last().map(|s| s == "WorkshopItemDetails").unwrap_or(false)
+                && stack
+                    .last()
+                    .map(|s| s == "WorkshopItemDetails")
+                    .unwrap_or(false)
                 && key == id_str;
             stack.push(key);
             if entering_target {
@@ -346,7 +349,9 @@ fn strip_workshop_item(acf: &str, id: u64) -> String {
             continue;
         }
         let at_top = stack.last().map(|s| s == "AppWorkshop").unwrap_or(false);
-        if clear_needs_download && at_top && toks.first().map(|k| k == "NeedsDownload") == Some(true)
+        if clear_needs_download
+            && at_top
+            && toks.first().map(|k| k == "NeedsDownload") == Some(true)
         {
             let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
             out.push(format!("{indent}\"NeedsDownload\"\t\t\"0\""));
@@ -491,7 +496,10 @@ timestamp = 133000000;
         let link = game.join("@1");
         assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
         // Relative target (like dayz-ctl's `ln -sr`) that still resolves to the workshop dir.
-        assert_eq!(fs::read_link(&link).unwrap(), PathBuf::from("../workshop/1"));
+        assert_eq!(
+            fs::read_link(&link).unwrap(),
+            PathBuf::from("../workshop/1")
+        );
         assert_eq!(
             fs::canonicalize(&link).unwrap(),
             fs::canonicalize(workshop.join("1")).unwrap()
@@ -542,7 +550,9 @@ timestamp = 133000000;
         lowercase_mod_tree(&m).unwrap();
 
         assert!(m.join("addons/hdsn_breachingcharge.pbo").is_file());
-        assert!(m.join("addons/hdsn_breachingcharge.pbo.hdsn.bisign").is_file());
+        assert!(m
+            .join("addons/hdsn_breachingcharge.pbo.hdsn.bisign")
+            .is_file());
         assert!(m.join("keys/hdsn.bikey").is_file());
         assert!(!m.join("Addons").exists());
         assert!(!m.join("Keys").exists());

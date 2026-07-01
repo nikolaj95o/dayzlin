@@ -33,11 +33,12 @@ jobs:
 
   flatpak:
     runs-on: ubuntu-latest
-    # Prebuilt image ships flatpak, flatpak-builder, ostree, git, gpg, and the
-    # GNOME 50 Platform + Sdk — so those don't get installed/downloaded per run.
+    # Prebuilt image ships flatpak, flatpak-builder, ostree, git, gpg. There's no
+    # gnome-50 tag (gnome-47 is the newest), so we pin the tooling image to gnome-47
+    # and install the GNOME 50 Platform + Sdk from Flathub below (cached per run).
     # --privileged is needed for flatpak-builder's bubblewrap sandbox in a container.
     container:
-      image: bilelmoussaoui/flatpak-github-actions:gnome-50
+      image: bilelmoussaoui/flatpak-github-actions:gnome-47
       options: --privileged
     steps:
       - uses: actions/checkout@v5
@@ -61,18 +62,20 @@ jobs:
 
       # The user install holds only what we add below (+ ostree metadata), so it's
       # a self-contained cache. Bump the key suffix when these versions change.
-      - name: Cache Flatpak SDK extensions
+      - name: Cache Flatpak runtime + SDK extensions
         uses: actions/cache@v4
         with:
           path: ~/.local/share/flatpak
-          key: flatpak-ext-gnome50-rust25.08-node24-25.08
-          restore-keys: flatpak-ext-
+          key: flatpak-rt-gnome50-rust25.08-node24-25.08
+          restore-keys: flatpak-rt-
 
-      - name: Add Flathub remote + install SDK extensions
+      - name: Add Flathub remote + install runtime and SDK extensions
         run: |
           flatpak remote-add --user --if-not-exists flathub \
             https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y flathub \
+            org.gnome.Platform//50 \
+            org.gnome.Sdk//50 \
             org.freedesktop.Sdk.Extension.rust-stable//25.08 \
             org.freedesktop.Sdk.Extension.node24//25.08
 

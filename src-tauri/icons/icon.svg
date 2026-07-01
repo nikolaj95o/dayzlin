@@ -55,6 +55,27 @@
       <stop offset="1" stop-color="#7c6438"/>
     </linearGradient>
 
+    <!-- Army 'pot' helmet -->
+    <linearGradient id="helmetDome" x1="512" y1="222" x2="512" y2="376" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7c8a46"/>
+      <stop offset="0.55" stop-color="#5c6a30"/>
+      <stop offset="1" stop-color="#3e4a20"/>
+    </linearGradient>
+    <linearGradient id="helmetBrim" x1="512" y1="330" x2="512" y2="378" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4c5826"/>
+      <stop offset="1" stop-color="#2f381a"/>
+    </linearGradient>
+
+    <!-- Hunting rifle (drawn in the rotated group's local space) -->
+    <linearGradient id="gunWood" x1="0" y1="-26" x2="0" y2="26" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a06a33"/>
+      <stop offset="1" stop-color="#5a3614"/>
+    </linearGradient>
+    <linearGradient id="gunMetal" x1="0" y1="-10" x2="0" y2="10" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#585863"/>
+      <stop offset="1" stop-color="#212127"/>
+    </linearGradient>
+
     <!-- Soft drop shadow for the whole tile -->
     <filter id="tileShadow" x="-20%" y="-20%" width="140%" height="140%">
       <feDropShadow dx="0" dy="18" stdDeviation="26" flood-color="#2a0a55" flood-opacity="0.45"/>
@@ -106,14 +127,6 @@
                C 576 826, 632 748, 632 622
                C 632 500, 594 402, 512 402 Z" fill="url(#belly)"/>
 
-      <!-- Flippers -->
-      <path d="M320 470 C 286 540, 292 660, 330 720 C 348 700, 352 560, 352 500 C 344 480, 332 472, 320 470 Z" fill="url(#body)"/>
-      <path d="M704 470 C 738 540, 732 660, 694 720 C 676 700, 672 560, 672 500 C 680 480, 692 472, 704 470 Z" fill="url(#body)"/>
-
-      <!-- Backpack strap across belly -->
-      <path d="M452 452 C 470 560, 520 720, 560 832 L 612 820 C 566 700, 520 552, 508 448 Z" fill="url(#strap)"/>
-      <rect x="556" y="640" width="66" height="30" rx="7" transform="rotate(20 589 655)" fill="#5c4a28"/>
-
       <!-- Eyes -->
       <ellipse cx="466" cy="430" rx="42" ry="52" fill="#ffffff"/>
       <ellipse cx="558" cy="430" rx="42" ry="52" fill="#ffffff"/>
@@ -131,6 +144,47 @@
       <!-- knot -->
       <path d="M612 486 C 646 486, 668 512, 660 540 C 640 536, 618 520, 610 500 Z" fill="#b81824"/>
       <path d="M628 520 C 660 520, 676 556, 668 582 L 636 566 C 624 548, 620 534, 628 520 Z" fill="#e23340"/>
+
+      <!-- ===== Hunting rifle held across the body ===== -->
+      <g transform="translate(520 600) rotate(-32)">
+        <!-- wooden butt stock -->
+        <path d="M -188 -26 C -198 -22, -198 22, -188 26 L -150 22 C -112 18, -92 12, -78 8 L -78 -12 C -92 -16, -112 -22, -150 -26 Z" fill="url(#gunWood)"/>
+        <!-- wooden fore-end -->
+        <rect x="-34" y="-11" width="104" height="22" rx="6" fill="url(#gunWood)"/>
+        <!-- receiver -->
+        <rect x="-82" y="-13" width="54" height="26" rx="4" fill="url(#gunMetal)"/>
+        <!-- barrel -->
+        <rect x="60" y="-6" width="150" height="11" rx="5" fill="url(#gunMetal)"/>
+        <!-- muzzle -->
+        <rect x="204" y="-7" width="11" height="13" rx="2" fill="#1a1a20"/>
+        <!-- trigger guard + trigger -->
+        <path d="M -64 13 C -66 31, -44 31, -46 13" fill="none" stroke="url(#gunMetal)" stroke-width="5"/>
+        <path d="M -55 14 L -55 25" stroke="#20202a" stroke-width="4" stroke-linecap="round"/>
+        <!-- bolt handle -->
+        <path d="M -38 -12 L -26 -28" stroke="url(#gunMetal)" stroke-width="6" stroke-linecap="round"/>
+        <circle cx="-24" cy="-30" r="7" fill="url(#gunMetal)"/>
+        <!-- scope -->
+        <rect x="-58" y="-35" width="66" height="16" rx="8" fill="#1e1e24"/>
+        <rect x="-50" y="-19" width="7" height="8" fill="#15151a"/>
+        <rect x="-2" y="-19" width="7" height="8" fill="#15151a"/>
+        <circle cx="6" cy="-27" r="5.5" fill="#33506a"/>
+      </g>
+
+      <!-- Forward flippers gripping the rifle (drawn over it so they read as 'holding') -->
+      <path d="M 690 480 C 724 520, 690 560, 616 574 C 588 580, 566 566, 574 544 C 610 520, 660 502, 676 482 C 681 476, 686 476, 690 480 Z" fill="url(#body)"/>
+      <path d="M 336 484 C 300 528, 336 592, 468 640 C 496 650, 512 630, 498 608 C 452 574, 392 522, 372 486 C 362 476, 346 476, 336 484 Z" fill="url(#body)"/>
+
+      <!-- ===== Army 'pot' helmet ===== -->
+      <g>
+        <!-- brim -->
+        <path d="M 330 346 C 330 334, 352 328, 386 330 C 430 333, 594 333, 638 330 C 672 328, 694 334, 694 346 C 694 364, 646 376, 512 376 C 378 376, 330 364, 330 346 Z" fill="url(#helmetBrim)"/>
+        <!-- dome -->
+        <path d="M 360 348 C 356 266, 420 222, 512 222 C 604 222, 668 266, 664 348 C 620 336, 404 336, 360 348 Z" fill="url(#helmetDome)"/>
+        <!-- dome highlight -->
+        <path d="M 402 286 C 430 254, 500 244, 540 254 C 512 262, 452 278, 424 308 C 410 302, 402 294, 402 286 Z" fill="#ffffff" fill-opacity="0.14"/>
+        <!-- rim seam -->
+        <path d="M 372 342 C 430 332, 594 332, 652 342" fill="none" stroke="#2c331a" stroke-opacity="0.5" stroke-width="4"/>
+      </g>
     </g>
   </g>
 

@@ -11,21 +11,21 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run tauri build
       # Workspace target dir is at the repo root, not under src-tauri/.
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             target/release/bundle/appimage/*.AppImage
@@ -40,11 +40,11 @@ jobs:
       image: bilelmoussaoui/flatpak-github-actions:gnome-47
       options: --privileged
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Restore the previously published repo so new builds add an incremental
       # commit instead of replacing history (clients then get small updates).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         continue-on-error: true          # first-ever run: gh-pages doesn't exist yet
         with:
           ref: gh-pages

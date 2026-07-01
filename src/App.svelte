@@ -30,6 +30,7 @@
   let filter = $state<ServerFilter>({
     map: null,
     first_person_only: false,
+    third_person_only: false,
     no_password: false,
     max_mods: null,
     min_players: null,
@@ -38,15 +39,17 @@
   });
   let status = $state("");
 
-  async function load(refresh = false, background = false) {
+  async function load(refresh = false, background = false): Promise<boolean> {
     status = background ? "Refreshing…" : "Loading servers…";
     try {
-      await listServers(refresh);
+      const stale = await listServers(refresh);
       servers = await filterServers(filter, query);
       status = `${servers.length} servers`;
+      return stale;
     } catch (e) {
       status = "";
       showError(e);
+      return false;
     }
   }
 
@@ -115,8 +118,11 @@
   }
 
   onMount(() => {
-    // Stale-while-revalidate: render cached servers instantly, then refresh in the background.
-    load(false).then(() => load(true, true));
+    // Stale-while-revalidate: render cached servers instantly, then refresh in the background
+    // only when the cache is stale (older than the TTL) or missing.
+    load(false).then((stale) => {
+      if (stale) load(true, true);
+    });
     refreshProfile();
     const un = listen<LaunchProgress>("launch-progress", (e) => {
       setLaunch(e.payload);

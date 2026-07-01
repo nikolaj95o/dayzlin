@@ -210,35 +210,45 @@ pub async fn cleanup_downloads(app: tauri::AppHandle) -> CleanupReport {
     reconcile_downloads(&app).await
 }
 
+/// How long a disk cache of the server list is considered fresh. Within this window a launch
+/// serves the cache and skips the background network refresh entirely.
+const CACHE_TTL_SECS: u64 = 300;
+
+/// Load the server list into `AppState.servers`. Returns whether the served data is *stale* — i.e.
+/// the frontend should kick off a background `refresh=true` to revalidate. The server data itself
+/// flows to the UI via `filter_servers`; only the freshness signal is returned here.
 #[tauri::command]
 pub async fn list_servers(
     refresh: bool,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
-) -> Result<Vec<Server>, CommandError> {
+) -> Result<bool, CommandError> {
     let cache = data_dir(&app).join("servers.json");
     if !refresh {
-        // Stale-while-revalidate: return instantly from whatever we already have so the UI
-        // can render immediately; the frontend kicks off a background `refresh=true` to update.
+        // Already loaded this session — nothing to do, and no refresh needed.
         {
             let in_mem = state.servers.lock().unwrap();
             if !in_mem.is_empty() {
-                return Ok(in_mem.clone());
+                return Ok(false);
             }
         }
-        // No in-memory list yet — serve the disk cache even if stale (ignore TTL); only hit
-        // the network when there is no cache file at all (truly first run).
-        if let Some(servers) = cache_read(&cache, u64::MAX) {
-            // Sanitize stale caches written before endpoint dedup, so a duped cache can't crash
-            // the UI (the network path is already deduped in `parse_servers`).
-            let servers = dedupe_by_endpoint(servers);
-            *state.servers.lock().unwrap() = servers.clone();
-            return Ok(servers);
+        // Fresh disk cache (within TTL): serve it and skip the network entirely.
+        if let Some(servers) = cache_read(&cache, CACHE_TTL_SECS) {
+            *state.servers.lock().unwrap() = dedupe_by_endpoint(servers);
+            return Ok(false);
         }
+        // Stale disk cache: serve it instantly (stale-while-revalidate) but signal the frontend
+        // to refresh in the background. Sanitize caches written before endpoint dedup so a duped
+        // cache can't crash the UI (the network path is already deduped in `parse_servers`).
+        if let Some(servers) = cache_read(&cache, u64::MAX) {
+            *state.servers.lock().unwrap() = dedupe_by_endpoint(servers);
+            return Ok(true);
+        }
+        // No cache at all (true first run): fetch now; the fresh result needs no refresh.
     }
     let servers = fetch_and_cache(&cache).await?;
-    *state.servers.lock().unwrap() = servers.clone();
-    Ok(servers)
+    *state.servers.lock().unwrap() = servers;
+    Ok(false)
 }
 
 async fn fetch_and_cache(cache: &std::path::Path) -> Result<Vec<Server>, CommandError> {

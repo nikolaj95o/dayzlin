@@ -7,6 +7,7 @@ use crate::servers::Server;
 pub struct ServerFilter {
     pub map: Option<String>,
     pub first_person_only: bool,
+    pub third_person_only: bool,
     pub no_password: bool,
     pub max_mods: Option<usize>,
     pub min_players: Option<u32>,
@@ -24,7 +25,10 @@ pub fn apply_filter(servers: &[Server], f: &ServerFilter) -> Vec<Server> {
             Some(m) => s.map.eq_ignore_ascii_case(m),
             None => true,
         })
-        .filter(|s| !f.first_person_only || s.first_person)
+        .filter(|s| match (f.first_person_only, f.third_person_only) {
+            (false, false) => true,
+            (fp, tp) => (fp && s.first_person) || (tp && !s.first_person),
+        })
         .filter(|s| !f.no_password || !s.password)
         .filter(|s| f.max_mods.map_or(true, |max| s.mods.len() <= max))
         .filter(|s| f.min_players.map_or(true, |min| s.players >= min))
@@ -96,6 +100,33 @@ mod tests {
         let out = apply_filter(&servers, &f);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].name, "A");
+    }
+
+    #[test]
+    fn filters_by_third_person() {
+        let servers = vec![
+            srv("A", "x", true, false, 10, 60, 2),
+            srv("B", "x", false, false, 5, 60, 2),
+        ];
+        // 3PP only keeps the third-person server.
+        let out = apply_filter(
+            &servers,
+            &ServerFilter {
+                third_person_only: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(out.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), vec!["B"]);
+        // Both perspective toggles set is equivalent to neither: all servers pass.
+        let out = apply_filter(
+            &servers,
+            &ServerFilter {
+                first_person_only: true,
+                third_person_only: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(out.len(), 2);
     }
 
     #[test]

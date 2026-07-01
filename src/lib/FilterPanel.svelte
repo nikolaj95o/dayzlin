@@ -19,7 +19,10 @@
     }}
   />
   <label class="inline-flex select-none items-center gap-1.5">
-    <input type="checkbox" bind:checked={filter.first_person_only} onchange={onChange} /> 1PP only
+    <input type="checkbox" bind:checked={filter.first_person_only} onchange={onChange} /> 1PP
+  </label>
+  <label class="inline-flex select-none items-center gap-1.5">
+    <input type="checkbox" bind:checked={filter.third_person_only} onchange={onChange} /> 3PP
   </label>
   <label class="inline-flex select-none items-center gap-1.5">
     <input type="checkbox" bind:checked={filter.no_password} onchange={onChange} /> No password

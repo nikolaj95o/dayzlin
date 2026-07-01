@@ -22,6 +22,7 @@ export interface Server {
 export interface ServerFilter {
   map: string | null;
   first_person_only: boolean;
+  third_person_only: boolean;
   no_password: boolean;
   max_mods: number | null;
   min_players: number | null;
@@ -79,8 +80,9 @@ export type LaunchProgress =
     }
   | { phase: "launching" };
 
+// Returns whether the served data is stale — i.e. the caller should trigger a background refresh.
 export const listServers = (refresh: boolean) =>
-  invoke<Server[]>("list_servers", { refresh });
+  invoke<boolean>("list_servers", { refresh });
 export const filterServers = (filter: ServerFilter, query: string) =>
   invoke<Server[]>("filter_servers", { filter, query });
 export const play = (server: Server, password: string | null) =>

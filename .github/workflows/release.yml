@@ -29,3 +29,68 @@ jobs:
           files: |
             target/release/bundle/appimage/*.AppImage
             target/release/dayzlin
+
+  flatpak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Restore the previously published repo so new builds add an incremental
+      # commit instead of replacing history (clients then get small updates).
+      - uses: actions/checkout@v4
+        continue-on-error: true          # first-ever run: gh-pages doesn't exist yet
+        with:
+          ref: gh-pages
+          path: site
+      - run: mkdir -p site/repo
+
+      - name: Install flatpak + flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Import GPG signing key
+        env:
+          FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+        run: |
+          echo "$FLATPAK_GPG_PRIVATE_KEY" | gpg --batch --import
+          KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')
+          echo "FLATPAK_GPG_KEYID=$KEYID" >> "$GITHUB_ENV"
+
+      - name: Add Flathub remote + install runtime/SDK/extensions
+        run: |
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub \
+            org.gnome.Platform//47 org.gnome.Sdk//47 \
+            org.freedesktop.Sdk.Extension.rust-stable//24.08 \
+            org.freedesktop.Sdk.Extension.node22//24.08
+
+      - name: Build + sign into the OSTree repo
+        run: |
+          flatpak-builder --user --force-clean \
+            --repo=site/repo --gpg-sign="$FLATPAK_GPG_KEYID" \
+            build-dir flatpak/io.github.nikolaj95o.dayzlin.yml
+          flatpak build-update-repo \
+            --generate-static-deltas --prune \
+            --gpg-sign="$FLATPAK_GPG_KEYID" site/repo
+
+      - name: Generate .flatpakrepo descriptor
+        run: |
+          GPGKEY_B64=$(gpg --export "$FLATPAK_GPG_KEYID" | base64 -w0)
+          cat > site/dayzlin.flatpakrepo <<EOF
+          [Flatpak Repo]
+          Title=dayzlin
+          Url=https://nikolaj95o.github.io/dayzlin/repo/
+          Homepage=https://github.com/nikolaj95o/dayzlin
+          Comment=DayZ launcher for Linux
+          Description=Latest dayzlin builds
+          GPGKey=$GPGKEY_B64
+          EOF
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          publish_branch: gh-pages

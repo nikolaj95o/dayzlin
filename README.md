@@ -56,11 +56,32 @@ your Steam Workshop subscriptions.
 
 ## Install
 
-> Packaged artifacts are not yet published. For now, build from source (below).
+### Flatpak (recommended — gets updates via `flatpak update`)
 
-- **Flatpak** (local build): see the build instructions in
+Add the dayzlin remote once, then install. Flathub is needed for the GNOME
+runtime dayzlin builds against:
+
+```bash
+# one-time: add Flathub (runtime) and the dayzlin remote
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak remote-add --if-not-exists dayzlin https://nikolaj95o.github.io/dayzlin/dayzlin.flatpakrepo
+
+# install
+flatpak install dayzlin io.github.nikolaj95o.dayzlin
+
+# get the latest version any time
+flatpak update
+```
+
+Each tagged release publishes a new commit to the remote, so `flatpak update`
+pulls the newest build.
+
+### Other options
+
+- **AppImage / binary**: attached to each [GitHub Release](https://github.com/nikolaj95o/dayzlin/releases)
+  (produced once a `v*` tag is pushed). One-shot — no auto-update.
+- **Local Flatpak build**: see the build instructions in
   [`flatpak/io.github.nikolaj95o.dayzlin.yml`](flatpak/io.github.nikolaj95o.dayzlin.yml).
-- **AppImage / binary**: produced by the release workflow once a `v*` tag is pushed.
 
 ## Build from source
 

@@ -105,6 +105,12 @@ jobs:
           flatpak-builder --user --force-clean \
             --repo=site/repo --gpg-sign="$FLATPAK_GPG_KEYID" \
             build-dir flatpak/io.github.nikolaj95o.dayzlin.yml
+          # The gh-pages deploy is a git checkout, which drops empty directories,
+          # so the restored OSTree repo is missing its empty refs/remotes dir.
+          # build-update-repo --generate-static-deltas lists refs/remotes and errors
+          # out without it ("opendir(refs/remotes): No such file or directory"), which
+          # breaks every incremental (non-first) release. Recreate it before updating.
+          mkdir -p site/repo/refs/remotes
           flatpak build-update-repo \
             --generate-static-deltas --prune \
             --gpg-sign="$FLATPAK_GPG_KEYID" site/repo

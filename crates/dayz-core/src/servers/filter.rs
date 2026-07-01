@@ -116,7 +116,10 @@ mod tests {
                 ..Default::default()
             },
         );
-        assert_eq!(out.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), vec!["B"]);
+        assert_eq!(
+            out.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+            vec!["B"]
+        );
         // Both perspective toggles set is equivalent to neither: all servers pass.
         let out = apply_filter(
             &servers,

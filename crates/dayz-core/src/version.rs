@@ -123,8 +123,14 @@ mod tests {
 
     #[test]
     fn version_match_collapses_three_and_four_part_forms() {
-        assert_eq!(version_match("1.29.163047", Some("1.29.0.163047")), Some(true));
-        assert_eq!(version_match("1.28.160123", Some("1.29.0.163047")), Some(false));
+        assert_eq!(
+            version_match("1.29.163047", Some("1.29.0.163047")),
+            Some(true)
+        );
+        assert_eq!(
+            version_match("1.28.160123", Some("1.29.0.163047")),
+            Some(false)
+        );
     }
 
     #[test]

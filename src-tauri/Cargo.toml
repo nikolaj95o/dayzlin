@@ -1,6 +1,6 @@
 [package]
 name = "dayzlin"
-version = "0.1.1"
+version = "0.1.2"
 description = "dayzlin — a DayZ launcher GUI for Linux"
 authors = ["Nikola Jovanovic"]
 license = "GPL-3.0-or-later"

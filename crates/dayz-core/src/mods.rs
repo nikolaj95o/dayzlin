@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
 use crate::error::Error;
@@ -10,6 +10,18 @@ use crate::DAYZ_APP_ID;
 pub struct InstalledMod {
     pub name: String,
     pub workshop_id: u64,
+}
+
+/// An installed mod enriched with the columns the Installed Mods tab shows: on-disk size and a
+/// "last used" timestamp (unix seconds).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct InstalledModInfo {
+    pub name: String,
+    pub workshop_id: u64,
+    pub size_bytes: u64,
+    /// The most recent launch that used this mod, or the mod folder's modification time when no
+    /// launch has been recorded yet. `None` only if the folder's mtime is also unreadable.
+    pub last_used: Option<i64>,
 }
 
 /// Extract name + publishedid from a `meta.cpp` body. Returns None if either is absent.
@@ -54,6 +66,68 @@ pub fn scan_installed_mods(workshop_dir: &Path) -> Vec<InstalledMod> {
         }
     }
     out
+}
+
+/// Like [`scan_installed_mods`] but enriches each entry with its on-disk size and a "last used"
+/// timestamp. `last_used` (workshop id → unix seconds, from the profile) is preferred; a mod with no
+/// recorded launch falls back to its folder's modification time, so freshly listed mods still show a
+/// date rather than nothing.
+pub fn scan_installed_mods_detailed(
+    workshop_dir: &Path,
+    last_used: &HashMap<u64, i64>,
+) -> Vec<InstalledModInfo> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(workshop_dir) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if let Ok(text) = std::fs::read_to_string(path.join("meta.cpp")) {
+            if let Some(m) = parse_meta_cpp(&text) {
+                let last = last_used
+                    .get(&m.workshop_id)
+                    .copied()
+                    .or_else(|| dir_mtime_unix(&path));
+                out.push(InstalledModInfo {
+                    name: m.name,
+                    workshop_id: m.workshop_id,
+                    size_bytes: dir_size_bytes(&path),
+                    last_used: last,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Modification time of `path` as unix seconds, or `None` when it can't be read.
+fn dir_mtime_unix(path: &Path) -> Option<i64> {
+    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+    let secs = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some(secs as i64)
+}
+
+/// Delete a completed mod install: remove its workshop content directory and the `@<id>` symlink in
+/// the game dir (if present). Unlike [`remove_workshop_download`], this touches only dayzlin-owned
+/// content and the symlink we create — never Steam's `appworkshop_*.acf` manifest — so it is safe
+/// whether or not Steam is running. (Steam still lists the item as installed in its manifest, but
+/// dayzlin's own scan keys off `meta.cpp`, which is now gone, so the mod correctly disappears from
+/// the app.)
+pub fn delete_installed_mod(workshop_dir: &Path, game_dir: &Path, id: u64) -> Result<(), Error> {
+    let content = workshop_dir.join(id.to_string());
+    if content.exists() {
+        std::fs::remove_dir_all(&content)?;
+    }
+    let link = game_dir.join(format!("@{id}"));
+    if let Ok(meta) = link.symlink_metadata() {
+        if meta.file_type().is_symlink() {
+            std::fs::remove_file(&link)?;
+        }
+    }
+    Ok(())
 }
 
 pub fn missing_mods(required: &[ServerMod], installed: &[InstalledMod]) -> Vec<u64> {
@@ -445,6 +519,46 @@ timestamp = 133000000;
         let mods = scan_installed_mods(dir.path());
         assert_eq!(mods.len(), 1);
         assert_eq!(mods[0].workshop_id, 1559212036);
+    }
+
+    #[test]
+    fn detailed_scan_reports_size_and_last_used() {
+        let dir = tempdir().unwrap();
+        let mod_dir = dir.path().join("1559212036");
+        fs::create_dir_all(&mod_dir).unwrap();
+        fs::write(mod_dir.join("meta.cpp"), META).unwrap();
+        fs::write(mod_dir.join("data.bin"), vec![0u8; 500]).unwrap();
+
+        // No recorded launch: last_used falls back to the folder mtime (which exists here).
+        let mods = scan_installed_mods_detailed(dir.path(), &HashMap::new());
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].workshop_id, 1559212036);
+        assert!(mods[0].size_bytes >= 500);
+        assert!(mods[0].last_used.is_some());
+
+        // A recorded launch time takes precedence over the folder mtime.
+        let recorded = HashMap::from([(1559212036u64, 1_700_000_000i64)]);
+        let mods = scan_installed_mods_detailed(dir.path(), &recorded);
+        assert_eq!(mods[0].last_used, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn delete_removes_content_dir_and_symlink() {
+        let dir = tempdir().unwrap();
+        let workshop = dir.path().join("workshop");
+        let game = dir.path().join("game");
+        let content = workshop.join("42");
+        fs::create_dir_all(&content).unwrap();
+        fs::write(content.join("meta.cpp"), META).unwrap();
+        fs::create_dir_all(&game).unwrap();
+        std::os::unix::fs::symlink("../workshop/42", game.join("@42")).unwrap();
+
+        delete_installed_mod(&workshop, &game, 42).unwrap();
+
+        assert!(!content.exists());
+        assert!(game.join("@42").symlink_metadata().is_err());
+        // Deleting a mod that isn't there is a no-op, not an error.
+        delete_installed_mod(&workshop, &game, 42).unwrap();
     }
 
     #[test]

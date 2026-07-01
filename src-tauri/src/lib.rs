@@ -44,6 +44,10 @@ pub fn run() {
             commands::check_environment,
             commands::cleanup_downloads,
             commands::resolve_dayz_path,
+            commands::list_installed_mods,
+            commands::delete_installed_mod,
+            commands::open_workshop_page,
+            commands::open_mod_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

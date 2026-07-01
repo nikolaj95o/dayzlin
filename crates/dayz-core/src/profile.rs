@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,10 @@ pub struct Profile {
     pub favorites: Vec<ServerRef>,
     #[serde(default)]
     pub history: Vec<ServerRef>,
+    /// Workshop id → unix-seconds timestamp of the last launch that used the mod. Powers the
+    /// Installed Mods tab's "Last used" column; only populated going forward, from `run_play`.
+    #[serde(default)]
+    pub mod_last_used: HashMap<u64, i64>,
 }
 
 impl Profile {
@@ -49,6 +54,13 @@ impl Profile {
         self.history.retain(|h| !h.same_endpoint(&r));
         self.history.insert(0, r);
         self.history.truncate(limit);
+    }
+
+    /// Stamp each of `ids` (a launched server's workshop mods) with `now` (unix seconds).
+    pub fn record_mods_used(&mut self, ids: &[u64], now: i64) {
+        for &id in ids {
+            self.mod_last_used.insert(id, now);
+        }
     }
 
     pub fn toggle_favorite(&mut self, r: ServerRef) {
@@ -102,6 +114,15 @@ mod tests {
         assert_eq!(p.history.len(), 2);
         assert_eq!(p.history[0].name, "C");
         assert_eq!(p.history[1].name, "A");
+    }
+
+    #[test]
+    fn record_mods_used_stamps_and_overwrites() {
+        let mut p = Profile::default();
+        p.record_mods_used(&[1, 2], 100);
+        p.record_mods_used(&[2], 200); // re-using mod 2 moves its timestamp forward
+        assert_eq!(p.mod_last_used.get(&1), Some(&100));
+        assert_eq!(p.mod_last_used.get(&2), Some(&200));
     }
 
     #[test]

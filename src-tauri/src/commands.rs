@@ -3,8 +3,9 @@ use std::sync::Mutex;
 
 use dayz_core::launch::{build_launch_args, launch};
 use dayz_core::mods::{
-    dir_size_bytes, ensure_mod_symlinks, is_download_complete, lowercase_mod_tree, missing_mods,
-    remove_workshop_download, scan_installed_mods, workshop_download_url,
+    delete_installed_mod as core_delete_installed_mod, dir_size_bytes, ensure_mod_symlinks,
+    is_download_complete, lowercase_mod_tree, missing_mods, remove_workshop_download,
+    scan_installed_mods, scan_installed_mods_detailed, workshop_download_url, InstalledModInfo,
 };
 use dayz_core::process::{spawn_detached, steam_running, RealRunner};
 use dayz_core::profile::{Profile, ServerRef};
@@ -90,6 +91,14 @@ fn home() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default()
+}
+
+/// Current wall-clock time as unix seconds (0 if the clock is before the epoch — not expected).
+fn now_unix_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 /// Workshop ids dayzlin asked Steam to download but hasn't yet seen finish. Persisted so a
@@ -541,6 +550,9 @@ async fn run_play(
         },
         50,
     );
+    // Stamp every mod this server uses as just-used, so the Installed Mods tab can show "Last used".
+    // `ids` is the full workshop-id list computed above for symlinking.
+    profile.record_mods_used(&ids, now_unix_secs());
     let _ = profile.save(&data_dir(app).join("profile.json"));
     Ok(())
 }
@@ -652,6 +664,53 @@ pub fn resolve_dayz_path(path: String) -> String {
     library_root(std::path::Path::new(&resolved))
         .to_string_lossy()
         .into_owned()
+}
+
+/// List every installed workshop mod with its on-disk size and last-used time, for the Mods tab.
+#[tauri::command]
+pub fn list_installed_mods(
+    app: tauri::AppHandle,
+) -> Result<Vec<InstalledModInfo>, CommandError> {
+    let profile = Profile::load(&data_dir(&app).join("profile.json"));
+    let dayz =
+        locate_dayz(&home(), profile.steam_root.as_deref()).map_err(|e| to_command_error(&e))?;
+    Ok(scan_installed_mods_detailed(
+        &dayz.workshop_dir(),
+        &profile.mod_last_used,
+    ))
+}
+
+/// Delete an installed mod (workshop content + `@<id>` game symlink) and forget its last-used entry.
+#[tauri::command]
+pub fn delete_installed_mod(id: u64, app: tauri::AppHandle) -> Result<(), CommandError> {
+    let path = data_dir(&app).join("profile.json");
+    let mut profile = Profile::load(&path);
+    let dayz =
+        locate_dayz(&home(), profile.steam_root.as_deref()).map_err(|e| to_command_error(&e))?;
+    core_delete_installed_mod(&dayz.workshop_dir(), &dayz.game_dir(), id)
+        .map_err(|e| to_command_error(&e))?;
+    if profile.mod_last_used.remove(&id).is_some() {
+        let _ = profile.save(&path);
+    }
+    Ok(())
+}
+
+/// Open a mod's Steam Workshop page inside the Steam client (cold-starts Steam if it's closed).
+#[tauri::command]
+pub fn open_workshop_page(id: u64) -> Result<(), CommandError> {
+    let url = format!("steam://url/CommunityFilePage/{id}");
+    spawn_detached("steam", &[url]).map_err(|e| to_command_error(&e))
+}
+
+/// Open a mod's install directory in the user's file manager.
+#[tauri::command]
+pub fn open_mod_folder(id: u64, app: tauri::AppHandle) -> Result<(), CommandError> {
+    let profile = Profile::load(&data_dir(&app).join("profile.json"));
+    let dayz =
+        locate_dayz(&home(), profile.steam_root.as_deref()).map_err(|e| to_command_error(&e))?;
+    let path = dayz.workshop_dir().join(id.to_string());
+    spawn_detached("xdg-open", &[path.to_string_lossy().into_owned()])
+        .map_err(|e| to_command_error(&e))
 }
 
 #[cfg(test)]

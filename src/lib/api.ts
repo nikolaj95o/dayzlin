@@ -47,6 +47,16 @@ export interface CommandError {
   detail: string | null;
 }
 
+// An installed workshop mod with size and last-used info; mirrors the Rust `InstalledModInfo`.
+export interface InstalledMod {
+  name: string;
+  workshop_id: number;
+  size_bytes: number;
+  // Unix-seconds timestamp of last use (last launch that used it, else the mod folder's mtime);
+  // null only when neither is known.
+  last_used: number | null;
+}
+
 // Diagnostics for the Settings tab; mirrors the Rust `EnvReport` struct.
 export interface EnvReport {
   app_version: string;
@@ -99,3 +109,11 @@ export const cleanupDownloads = () =>
   invoke<CleanupReport>("cleanup_downloads");
 export const resolveDayzPath = (path: string) =>
   invoke<string>("resolve_dayz_path", { path });
+export const listInstalledMods = () =>
+  invoke<InstalledMod[]>("list_installed_mods");
+export const deleteInstalledMod = (id: number) =>
+  invoke<void>("delete_installed_mod", { id });
+export const openWorkshopPage = (id: number) =>
+  invoke<void>("open_workshop_page", { id });
+export const openModFolder = (id: number) =>
+  invoke<void>("open_mod_folder", { id });

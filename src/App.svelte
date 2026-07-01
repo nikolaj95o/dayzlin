@@ -7,13 +7,17 @@
     play,
     getProfile,
     toggleFavorite,
+    listInstalledMods,
+    deleteInstalledMod,
     type Server,
     type ServerRef,
     type ServerFilter,
     type Profile,
+    type InstalledMod,
     type LaunchProgress,
   } from "./lib/api";
   import ServerTable from "./lib/ServerTable.svelte";
+  import ModsTable from "./lib/ModsTable.svelte";
   import FilterPanel from "./lib/FilterPanel.svelte";
   import Settings from "./lib/Settings.svelte";
   import MessageDialog from "./lib/MessageDialog.svelte";
@@ -22,10 +26,11 @@
   import { startLaunch, setLaunch, closeLaunch } from "./lib/launch";
   import { Button } from "$lib/components/ui/button/index.js";
 
-  type View = "servers" | "favorites" | "history" | "settings";
+  type View = "servers" | "favorites" | "history" | "mods" | "settings";
 
   let view = $state<View>("servers");
   let servers = $state<Server[]>([]);
+  let mods = $state<InstalledMod[]>([]);
   // Unfiltered master list, used to resolve saved favorite/history ServerRefs to full live
   // servers regardless of the Servers-tab filter. Refreshed alongside `servers` in load().
   let allServers = $state<Server[]>([]);
@@ -145,6 +150,35 @@
   const historyServers = $derived(resolve(profile?.history ?? []));
   const isOffline = (s: Server) => !liveByKey.has(key(s.ip, s.game_port));
 
+  // How many favorite servers use each mod, keyed by workshop id. Built from the resolved live
+  // favorites, so a favorite that isn't in the current server list (offline) has no known mods and
+  // can't contribute — the same limitation the Favorites tab already has.
+  const favoriteModCounts = $derived.by(() => {
+    const counts = new Map<number, number>();
+    for (const s of favoriteServers)
+      for (const m of s.mods)
+        counts.set(m.workshop_id, (counts.get(m.workshop_id) ?? 0) + 1);
+    return counts;
+  });
+  const favoriteCount = (id: number) => favoriteModCounts.get(id) ?? 0;
+
+  async function loadMods() {
+    try {
+      mods = await listInstalledMods();
+    } catch (e) {
+      showError(e);
+    }
+  }
+
+  async function onDeleteMod(m: InstalledMod) {
+    try {
+      await deleteInstalledMod(m.workshop_id);
+      await loadMods();
+    } catch (e) {
+      showError(e);
+    }
+  }
+
   // Unique map names for the Map filter dropdown, drawn from the full cached list so options
   // don't disappear as other filters narrow the visible results. Lowercased and deduped so
   // maps differing only in case collapse to one option (the backend matches case-insensitively).
@@ -159,6 +193,11 @@
   function show(v: View) {
     view = v;
     if (v === "favorites" || v === "history") refreshProfile();
+    // The Mods tab needs a fresh scan and up-to-date favorites for the "used by" count.
+    if (v === "mods") {
+      loadMods();
+      refreshProfile();
+    }
   }
 
   onMount(() => {
@@ -184,6 +223,7 @@
       <Button variant={view === "servers" ? "secondary" : "ghost"} size="sm" onclick={() => show("servers")}>Servers</Button>
       <Button variant={view === "favorites" ? "secondary" : "ghost"} size="sm" onclick={() => show("favorites")}>Favorites</Button>
       <Button variant={view === "history" ? "secondary" : "ghost"} size="sm" onclick={() => show("history")}>History</Button>
+      <Button variant={view === "mods" ? "secondary" : "ghost"} size="sm" onclick={() => show("mods")}>Mods</Button>
       <Button variant={view === "settings" ? "secondary" : "ghost"} size="sm" onclick={() => show("settings")}>Settings</Button>
     </nav>
   </header>
@@ -206,6 +246,8 @@
     <ServerTable servers={favoriteServers} {onSelect} {isFavorite} {onToggleFavorite} {isOffline} emptyLabel="No favorites yet" />
   {:else if view === "history"}
     <ServerTable servers={historyServers} {onSelect} {isFavorite} {onToggleFavorite} {isOffline} emptyLabel="No history yet" />
+  {:else if view === "mods"}
+    <ModsTable {mods} {favoriteCount} onDelete={onDeleteMod} emptyLabel="No installed mods" />
   {/if}
 </main>
 

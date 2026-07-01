@@ -17,6 +17,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -32,6 +33,12 @@ jobs:
 
   flatpak:
     runs-on: ubuntu-latest
+    # Prebuilt image ships flatpak, flatpak-builder, ostree, git, gpg, and the
+    # GNOME 47 Platform + Sdk — so those don't get installed/downloaded per run.
+    # --privileged is needed for flatpak-builder's bubblewrap sandbox in a container.
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:gnome-47
+      options: --privileged
     steps:
       - uses: actions/checkout@v4
 
@@ -44,11 +51,6 @@ jobs:
           path: site
       - run: mkdir -p site/repo
 
-      - name: Install flatpak + flatpak-builder
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
-
       - name: Import GPG signing key
         env:
           FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
@@ -57,14 +59,46 @@ jobs:
           KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')
           echo "FLATPAK_GPG_KEYID=$KEYID" >> "$GITHUB_ENV"
 
-      - name: Add Flathub remote + install runtime/SDK/extensions
+      # The user install holds only what we add below (+ ostree metadata), so it's
+      # a self-contained cache. Bump the key suffix when these versions change.
+      - name: Cache Flatpak SDK extensions
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/flatpak
+          key: flatpak-ext-gnome47-rust24.08-node24.08
+          restore-keys: flatpak-ext-
+
+      - name: Add Flathub remote + install SDK extensions
         run: |
           flatpak remote-add --user --if-not-exists flathub \
             https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y flathub \
-            org.gnome.Platform//47 org.gnome.Sdk//47 \
             org.freedesktop.Sdk.Extension.rust-stable//24.08 \
             org.freedesktop.Sdk.Extension.node22//24.08
+
+      # Persist the in-sandbox cargo/npm build across releases so warm runs only
+      # recompile changed crates instead of the whole ~500-crate workspace.
+      - name: Cache cargo + npm (in-sandbox build)
+        uses: actions/cache@v4
+        with:
+          path: /cargo-cache
+          key: flatpak-cargo-${{ hashFiles('Cargo.lock', 'package-lock.json') }}
+          restore-keys: flatpak-cargo-
+      - run: mkdir -p /cargo-cache
+
+      # Patch the manifest in place (CI only — never committed) to bind-mount the
+      # cache dir into the build sandbox and point cargo/npm at it. /cargo-cache is
+      # outside home, so flatpak doesn't remap the path; CARGO_TARGET_DIR there
+      # survives --force-clean and gets saved by actions/cache above.
+      - name: Patch manifest with CI build cache
+        run: |
+          curl -L https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+            -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq
+          yq -i '
+            (.modules[] | select(.name=="dayzlin") | .build-options.build-args) += ["--filesystem=/cargo-cache"] |
+            (.modules[] | select(.name=="dayzlin") | .build-options.env) =
+              {"CARGO_HOME":"/cargo-cache/cargo","CARGO_TARGET_DIR":"/cargo-cache/target","npm_config_cache":"/cargo-cache/npm"}
+          ' flatpak/io.github.nikolaj95o.dayzlin.yml
 
       - name: Build + sign into the OSTree repo
         run: |

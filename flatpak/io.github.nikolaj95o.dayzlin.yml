@@ -49,7 +49,7 @@ modules:
       # AppImage/deb/rpm bundlers (we only need the raw binary for the Flatpak).
       - npm ci
       - npm run tauri build -- --no-bundle
-      - install -Dm755 target/release/dayzlin /app/bin/dayzlin
+      - install -Dm755 "${CARGO_TARGET_DIR:-target}/release/dayzlin" /app/bin/dayzlin
     sources:
       - type: dir
         path: ..

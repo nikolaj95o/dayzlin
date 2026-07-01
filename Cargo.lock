@@ -620,7 +620,7 @@ dependencies = [
 
 [[package]]
 name = "dayz-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "fuzzy-matcher",
@@ -635,7 +635,7 @@ dependencies = [
 
 [[package]]
 name = "dayzlin"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dayz-core",
  "log",

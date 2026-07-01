@@ -1,5 +1,10 @@
 <script lang="ts">
   import type { Server } from "./api";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { Badge } from "$lib/components/ui/badge/index.js";
+  import Play from "@lucide/svelte/icons/play";
+  import Star from "@lucide/svelte/icons/star";
+  import X from "@lucide/svelte/icons/x";
 
   let {
     servers = [],
@@ -111,33 +116,34 @@
     <tr>
       {#each columns as col}
         {@const info = sortInfo(col.key)}
-        <th class="sticky top-0 border-b border-border bg-bg p-0 text-left font-semibold text-text-h" aria-sort={info ? (info.dir === "asc" ? "ascending" : "descending") : "none"}>
+        <th class="border-border bg-background text-foreground sticky top-0 border-b p-0 text-left font-semibold" aria-sort={info ? (info.dir === "asc" ? "ascending" : "descending") : "none"}>
           <!-- Header sort buttons: look like header text, not default buttons. -->
-          <button class="flex w-full cursor-pointer items-center gap-1 border-0 bg-transparent px-2.5 py-2 text-left font-[inherit] text-text-h" onclick={() => toggleSort(col.key)}>
+          <button class="text-foreground flex w-full cursor-pointer items-center gap-1 px-2.5 py-2 text-left font-[inherit]" onclick={() => toggleSort(col.key)}>
             {col.label}
             <!-- Reserve a fixed slot for the arrow so toggling it doesn't shift the header row. -->
             <span class="inline-block w-[0.9em] text-[0.7em] leading-none">{info ? (info.dir === "asc" ? "▲" : "▼") : ""}</span>
-            {#if info && sortChain.length > 1}<span class="text-[0.7em] leading-none text-accent">{info.pos}</span>{/if}
+            {#if info && sortChain.length > 1}<span class="text-primary text-[0.7em] leading-none">{info.pos}</span>{/if}
           </button>
         </th>
       {/each}
-      <th class="sticky top-0 border-b border-border bg-bg px-2 py-1 text-right">
+      <th class="border-border bg-background sticky top-0 border-b px-2 py-1 text-right">
         {#if sortChain.length > 0}
-          <button
-            class="inline-flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-md border border-border bg-transparent p-0 text-text hover:border-accent-border hover:text-text-h"
+          <Button
+            variant="ghost"
+            size="icon-xs"
             title="Clear sorting"
             aria-label="Clear sorting"
             onclick={() => (sortChain = [])}
           >
-            <svg class="h-4 w-4 fill-none stroke-current [stroke-linecap:round] [stroke-width:1.5]" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
-          </button>
+            <X />
+          </Button>
         {/if}
       </th>
     </tr>
   </thead>
   <tbody>
     {#if sorted.length === 0}
-      <tr><td colspan="6" class="p-6 text-center text-text">{emptyLabel}</td></tr>
+      <tr><td colspan="6" class="text-muted-foreground p-6 text-center">{emptyLabel}</td></tr>
     {:else}
       {#if start > 0}
         <!-- Height must sit on a cell: WebKit ignores `height` on a cell-less <tr>. -->
@@ -146,39 +152,34 @@
       {#each slice as s (s.ip + ":" + s.game_port)}
       {@const offline = isOffline(s)}
       <!-- Fixed 44px row height (h-11) is required by the virtualization math (ROW_H = 44). -->
-      <tr class="box-border h-11 hover:bg-bg-alt {offline ? 'opacity-50' : ''}">
-        <td class="max-w-[380px] overflow-hidden border-b border-border px-2.5 py-[7px] font-medium text-ellipsis whitespace-nowrap text-text-h">{s.name}</td>
-        <td class="border-b border-border px-2.5 py-[7px]">{offline ? "—" : s.map}</td>
-        <td class="border-b border-border px-2.5 py-[7px]">{offline ? "—" : `${s.players}/${s.max_players}`}</td>
-        <td class="border-b border-border px-2.5 py-[7px]">{offline ? "—" : s.mods.length}</td>
-        <td class="border-b border-border px-2.5 py-[7px]">{offline ? "—" : s.first_person ? "1PP" : "3PP"}</td>
-        <td class="flex items-center gap-1.5 border-b border-border px-2.5 py-[7px] whitespace-nowrap">
+      <tr class="hover:bg-muted box-border h-11 {offline ? 'opacity-50' : ''}">
+        <td class="border-border text-foreground max-w-[380px] overflow-hidden border-b px-2.5 py-[7px] font-medium text-ellipsis whitespace-nowrap">{s.name}</td>
+        <td class="border-border border-b px-2.5 py-[7px]">{offline ? "—" : s.map}</td>
+        <td class="border-border border-b px-2.5 py-[7px]">{offline ? "—" : `${s.players}/${s.max_players}`}</td>
+        <td class="border-border border-b px-2.5 py-[7px]">{offline ? "—" : s.mods.length}</td>
+        <td class="border-border border-b px-2.5 py-[7px]">{offline ? "—" : s.first_person ? "1PP" : "3PP"}</td>
+        <td class="border-border flex items-center gap-1.5 border-b px-2.5 py-[7px] whitespace-nowrap">
           {#if offline}
             <!-- Saved server that isn't in the current live list; can't be launched. -->
-            <span class="inline-flex h-[30px] items-center rounded-[4px] border border-border px-2 text-[0.7em] font-semibold tracking-[0.03em] whitespace-nowrap text-text opacity-75" title="Server is offline or not in the current list">OFFLINE</span>
+            <Badge variant="outline" title="Server is offline or not in the current list">OFFLINE</Badge>
           {:else if s.version_match === false}
             <!-- Shown in place of Play when the server's build doesn't match the installed DayZ. -->
-            <span class="inline-flex h-[30px] items-center rounded-[4px] border border-border px-2 text-[0.7em] font-semibold tracking-[0.03em] whitespace-nowrap text-text opacity-75" title="Server build {s.version} differs from your installed DayZ">NOT SAME VER</span>
+            <Badge variant="outline" title="Server build {s.version} differs from your installed DayZ">NOT SAME VER</Badge>
           {:else}
-            <button class="icon-btn-accent" title="Play" aria-label="Play" onclick={() => onSelect(s)}>
-              <svg class="h-4 w-4 fill-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" /></svg>
-            </button>
+            <Button variant="outline" size="icon-sm" title="Play" aria-label="Play" onclick={() => onSelect(s)}>
+              <Play />
+            </Button>
           {/if}
-          <button
-            class="icon-btn {isFavorite(s) ? 'border-accent-border text-accent' : ''}"
+          <Button
+            variant="outline"
+            size="icon-sm"
             title={isFavorite(s) ? "Remove from favorites" : "Add to favorites"}
             aria-label={isFavorite(s) ? "Remove from favorites" : "Add to favorites"}
             aria-pressed={isFavorite(s)}
             onclick={() => onToggleFavorite(s)}
           >
-            <svg class="h-4 w-4 stroke-current [stroke-linejoin:round] [stroke-width:1.2] {isFavorite(s) ? 'fill-current' : 'fill-none'}" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                d="M8 1.5l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.8 4.2 13.8l.7-4.3-3.1-3 4.3-.6z"
-              />
-              <!-- Diagonal slash over a filled star: signals that clicking removes the favorite. -->
-              {#if isFavorite(s)}<path class="fill-none [stroke-width:1.5]" d="M3 13L13 3" />{/if}
-            </svg>
-          </button>
+            <Star class={isFavorite(s) ? "fill-current text-primary" : ""} />
+          </Button>
         </td>
       </tr>
       {/each}

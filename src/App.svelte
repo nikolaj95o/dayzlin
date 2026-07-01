@@ -20,6 +20,7 @@
   import LaunchDialog from "./lib/LaunchDialog.svelte";
   import { showError } from "./lib/dialog";
   import { startLaunch, setLaunch, closeLaunch } from "./lib/launch";
+  import { Button } from "$lib/components/ui/button/index.js";
 
   type View = "servers" | "favorites" | "history" | "settings";
 
@@ -176,24 +177,24 @@
   });
 </script>
 
-<main class="mx-auto flex h-screen w-full max-w-[1100px] flex-col box-border px-4 pt-4 pb-12 sm:px-5">
+<main class="mx-auto flex h-screen w-full max-w-6xl flex-col box-border px-4 pt-4 pb-12 sm:px-5">
   <header class="flex flex-wrap items-center gap-4">
-    <h1 class="mt-2 mb-4 text-[28px] font-semibold text-text-h">dayzlin</h1>
+    <h1 class="mt-2 mb-4 text-3xl font-semibold">dayzlin</h1>
     <nav class="ml-auto flex gap-1.5">
-      <button class="btn" class:btn-active={view === "servers"} onclick={() => show("servers")}>Servers</button>
-      <button class="btn" class:btn-active={view === "favorites"} onclick={() => show("favorites")}>Favorites</button>
-      <button class="btn" class:btn-active={view === "history"} onclick={() => show("history")}>History</button>
-      <button class="btn" class:btn-active={view === "settings"} onclick={() => show("settings")}>Settings</button>
+      <Button variant={view === "servers" ? "secondary" : "ghost"} size="sm" onclick={() => show("servers")}>Servers</Button>
+      <Button variant={view === "favorites" ? "secondary" : "ghost"} size="sm" onclick={() => show("favorites")}>Favorites</Button>
+      <Button variant={view === "history" ? "secondary" : "ghost"} size="sm" onclick={() => show("history")}>History</Button>
+      <Button variant={view === "settings" ? "secondary" : "ghost"} size="sm" onclick={() => show("settings")}>Settings</Button>
     </nav>
   </header>
 
-  <p class="my-2 font-mono text-[13px] text-text">{status}</p>
+  <p class="text-muted-foreground my-2 font-mono text-sm">{status}</p>
 
   <!-- Keep the Servers view mounted and hide it with CSS so switching tabs doesn't destroy and
        rebuild the (virtualized) table — returning to it is instant and scroll position survives. -->
   <div class="flex min-h-0 flex-1 flex-col" class:hidden={view !== "servers"}>
     <div class="flex flex-wrap items-center gap-3">
-      <button class="btn" onclick={() => load(true)}>Refresh</button>
+      <Button variant="outline" size="sm" onclick={() => load(true)}>Refresh</Button>
       <FilterPanel bind:filter bind:query {mapOptions} onChange={applyFilters} />
     </div>
     <ServerTable {servers} {onSelect} {isFavorite} {onToggleFavorite} />

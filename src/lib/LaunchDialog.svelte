@@ -1,6 +1,10 @@
 <script lang="ts">
   import { launch, closeLaunch } from "./launch";
   import { cancelPlay } from "./api";
+  import * as Dialog from "$lib/components/ui/dialog/index.js";
+  import { Progress } from "$lib/components/ui/progress/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import LoaderCircle from "@lucide/svelte/icons/loader-circle";
 
   // Cancel is only meaningful while we're still preparing/downloading; once Steam has been
   // handed off ("launching"/"starting") there's nothing left to abort.
@@ -31,32 +35,45 @@
   }
 </script>
 
-{#if $launch}
-  <div class="fixed inset-0 z-[100] flex items-center justify-center">
-    <div class="absolute inset-0 bg-black/50"></div>
-    <div class="modal-card flex w-[calc(100%-3rem)] max-w-[420px] flex-col items-center gap-2.5 px-8 py-7 text-center" role="dialog" aria-modal="true" aria-busy="true" tabindex="-1">
-      <div class="h-9 w-9 animate-spin rounded-full border-[3px] border-border border-t-accent motion-reduce:[animation-duration:2s]" aria-hidden="true"></div>
+<!-- Non-dismissable while a launch is in flight: no close button, and outside-click / Escape
+     are ignored. It closes only when the launch store is cleared. -->
+<Dialog.Root open={$launch !== null}>
+  <Dialog.Content
+    showCloseButton={false}
+    interactOutsideBehavior="ignore"
+    escapeKeydownBehavior="ignore"
+    class="max-w-md items-center text-center"
+  >
+    {#if $launch}
+      <Dialog.Header class="items-center">
+        <LoaderCircle
+          class="text-primary size-9 animate-spin motion-reduce:[animation-duration:2s]"
+          aria-hidden="true"
+        />
+        <Dialog.Title>
+          {#if $launch.phase === "preparing"}Preparing…
+          {:else if $launch.phase === "downloading"}Downloading mods
+          {:else if $launch.phase === "launching"}Launching game…
+          {:else if $launch.phase === "starting"}DayZ is starting…{/if}
+        </Dialog.Title>
+        <Dialog.Description class="sr-only">Launching DayZ</Dialog.Description>
+      </Dialog.Header>
 
-      {#if $launch.phase === "preparing"}
-        <p class="m-0 text-[16px] text-text-h">Preparing…</p>
-      {:else if $launch.phase === "downloading"}
-        <p class="m-0 text-[16px] text-text-h">Downloading mods</p>
-        <progress class="h-2 w-full" value={$launch.current} max={$launch.total}></progress>
-        <p class="m-0 text-text [font-variant-numeric:tabular-nums]">{$launch.current} / {$launch.total}</p>
-        <p class="m-0 text-[13px] text-text opacity-80 break-words">{$launch.name} ({$launch.id})</p>
-        {#if $launch.total_bytes}
-          <progress class="h-2 w-full" value={$launch.bytes} max={$launch.total_bytes}></progress>
-        {/if}
-        <p class="m-0 text-[13px] text-text opacity-70 [font-variant-numeric:tabular-nums]">{formatProgress($launch.bytes, $launch.total_bytes)}</p>
-      {:else if $launch.phase === "launching"}
-        <p class="m-0 text-[16px] text-text-h">Launching game…</p>
-      {:else if $launch.phase === "starting"}
-        <p class="m-0 text-[16px] text-text-h">DayZ is starting…</p>
+      {#if $launch.phase === "downloading"}
+        <div class="flex w-full flex-col items-center gap-2">
+          <Progress value={$launch.current} max={$launch.total} />
+          <p class="text-muted-foreground m-0 text-sm tabular-nums">{$launch.current} / {$launch.total}</p>
+          <p class="text-muted-foreground m-0 text-sm break-words opacity-80">{$launch.name} ({$launch.id})</p>
+          {#if $launch.total_bytes}
+            <Progress value={$launch.bytes} max={$launch.total_bytes} />
+          {/if}
+          <p class="text-muted-foreground m-0 text-xs tabular-nums opacity-70">{formatProgress($launch.bytes, $launch.total_bytes)}</p>
+        </div>
       {/if}
 
       {#if canCancel}
-        <button class="mt-2 cursor-pointer rounded-md border border-border bg-transparent px-3 py-1 font-[inherit] text-text transition-colors hover:border-accent-border hover:text-text-h" onclick={cancel}>Cancel</button>
+        <Button variant="outline" onclick={cancel}>Cancel</Button>
       {/if}
-    </div>
-  </div>
-{/if}
+    {/if}
+  </Dialog.Content>
+</Dialog.Root>

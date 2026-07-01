@@ -10,7 +10,14 @@
   } from "./api";
   import { showError } from "./dialog";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { theme, setTheme } from "./theme.svelte";
+  import { theme, setTheme, type ThemePref } from "./theme.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { Input } from "$lib/components/ui/input/index.js";
+  import { Label } from "$lib/components/ui/label/index.js";
+  import { Badge } from "$lib/components/ui/badge/index.js";
+  import { Separator } from "$lib/components/ui/separator/index.js";
+  import * as Card from "$lib/components/ui/card/index.js";
+  import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
 
   let profile = $state<Profile | null>(null);
   let saved = $state(false);
@@ -84,100 +91,116 @@
 </script>
 
 {#if profile}
-  <div class="mt-3 flex max-w-[360px] flex-col gap-3.5">
-    <div class="flex flex-col gap-1 text-sm text-text-h">
-      Theme
-      <div class="flex gap-1.5">
-        <button class="btn" class:btn-active={theme.pref === "light"} onclick={() => setTheme("light")}>Light</button>
-        <button class="btn" class:btn-active={theme.pref === "dark"} onclick={() => setTheme("dark")}>Dark</button>
-        <button class="btn" class:btn-active={theme.pref === "system"} onclick={() => setTheme("system")}>System</button>
+  <Card.Root class="mt-3 max-w-md">
+    <Card.Content class="flex flex-col gap-4">
+      <div class="flex flex-col gap-1.5">
+        <Label>Theme</Label>
+        <ToggleGroup.Root
+          type="single"
+          variant="outline"
+          value={theme.pref}
+          onValueChange={(v) => v && setTheme(v as ThemePref)}
+        >
+          <ToggleGroup.Item value="light">Light</ToggleGroup.Item>
+          <ToggleGroup.Item value="dark">Dark</ToggleGroup.Item>
+          <ToggleGroup.Item value="system">System</ToggleGroup.Item>
+        </ToggleGroup.Root>
       </div>
-    </div>
-    <hr class="my-1 w-full border-0 border-t border-border" />
-    <label class="flex flex-col gap-1 text-sm text-text-h">
-      Player name
-      <input class="field" bind:value={profile.player} placeholder="survivor" />
-    </label>
-    <label class="flex flex-col gap-1 text-sm text-text-h">
-      DayZ install location
-      <div class="flex gap-2">
-        <input
-          class="field flex-1"
-          bind:value={profile.steam_root}
-          placeholder="auto-detect (e.g. /mnt/FAST/SteamLibrary)"
-        />
-        <button class="btn" type="button" onclick={browseDayz}>Browse…</button>
+
+      <Separator />
+
+      <div class="flex flex-col gap-1.5">
+        <Label for="player">Player name</Label>
+        <Input id="player" bind:value={profile.player} placeholder="survivor" />
       </div>
-      <span class="text-xs leading-[1.4] text-text">
-        Folder containing <code>steamapps</code>. Leave blank to detect automatically from
-        your Steam libraries.
-      </span>
-    </label>
-    <div class="flex items-center gap-2.5">
-      <button class="btn" onclick={saveP}>Save</button>
-      {#if saved}<span class="text-[13px] text-accent">Saved ✓</span>{/if}
-    </div>
-    <hr class="my-1 w-full border-0 border-t border-border" />
-    <p class="text-[13px] leading-[1.45] text-text">
-      Mods download through the running Steam client — no SteamCMD, no separate login.
-      Just keep Steam open and logged in when you Play.
-    </p>
-    <div class="flex flex-col gap-1.5">
+
+      <div class="flex flex-col gap-1.5">
+        <Label for="steam-root">DayZ install location</Label>
+        <div class="flex gap-2">
+          <Input
+            id="steam-root"
+            class="flex-1"
+            bind:value={profile.steam_root}
+            placeholder="auto-detect (e.g. /mnt/FAST/SteamLibrary)"
+          />
+          <Button variant="outline" type="button" onclick={browseDayz}>Browse…</Button>
+        </div>
+        <span class="text-muted-foreground text-xs">
+          Folder containing <code>steamapps</code>. Leave blank to detect automatically from
+          your Steam libraries.
+        </span>
+      </div>
+
       <div class="flex items-center gap-2.5">
-        <button class="btn" type="button" onclick={cleanup} disabled={cleaning}>
-          {cleaning ? "Cleaning…" : "Clean up leftover mod downloads"}
-        </button>
-        {#if cleanupMsg}<span class="text-[13px] text-accent">{cleanupMsg}</span>{/if}
+        <Button onclick={saveP}>Save</Button>
+        {#if saved}<Badge variant="secondary">Saved ✓</Badge>{/if}
       </div>
-      <span class="text-xs leading-[1.4] text-text">
-        Removes partial mod downloads left by a cancelled launch so Steam stops re-downloading
-        them. Close Steam first — it must be shut down for cleanup to take effect.
-      </span>
-    </div>
-    <hr class="my-1 w-full border-0 border-t border-border" />
-    <h3 class="m-0 text-sm text-text-h">Diagnostics</h3>
-    {#if env}
-      <div class="flex flex-col gap-2">
-        <div class="flex items-baseline gap-2.5 text-[13px]">
-          <span class="shrink-0 grow-0 basis-[130px] text-text">App version</span>
-          <span class="break-all text-text-h">{env.app_version}</span>
+
+      <Separator />
+
+      <p class="text-muted-foreground text-sm">
+        Mods download through the running Steam client — no SteamCMD, no separate login.
+        Just keep Steam open and logged in when you Play.
+      </p>
+      <div class="flex flex-col gap-1.5">
+        <div class="flex items-center gap-2.5">
+          <Button variant="outline" type="button" onclick={cleanup} disabled={cleaning}>
+            {cleaning ? "Cleaning…" : "Clean up leftover mod downloads"}
+          </Button>
+          {#if cleanupMsg}<span class="text-primary text-sm">{cleanupMsg}</span>{/if}
         </div>
-        <div class="flex items-baseline gap-2.5 text-[13px]">
-          <span class="shrink-0 grow-0 basis-[130px] text-text">Steam running</span>
-          {#if env.steam_running}
-            <span class="break-all text-green-600 dark:text-green-400">✓ running</span>
-          {:else}
-            <span class="break-all text-red-600 dark:text-red-400">✗ not running — open Steam and log in to download mods</span>
-          {/if}
-        </div>
-        <div class="flex items-baseline gap-2.5 text-[13px]">
-          <span class="shrink-0 grow-0 basis-[130px] text-text">Steam install</span>
-          {#if env.steam_found}
-            <span class="break-all text-green-600 dark:text-green-400">✓ {env.steam_root} ({env.steam_kind})</span>
-          {:else}
-            <span class="break-all text-red-600 dark:text-red-400">✗ not found</span>
-          {/if}
-        </div>
-        <div class="flex items-baseline gap-2.5 text-[13px]">
-          <span class="shrink-0 grow-0 basis-[130px] text-text">DayZ installed</span>
-          {#if env.dayz_installed}
-            <span class="break-all text-green-600 dark:text-green-400">✓ {env.dayz_path}</span>
-          {:else}
-            <span class="break-all text-red-600 dark:text-red-400">
-              ✗ not found — set the DayZ install location above, or restart Steam with the
-              drive mounted
-            </span>
-          {/if}
-        </div>
-        {#if env.dayz_version}
-          <div class="flex items-baseline gap-2.5 text-[13px]">
-            <span class="shrink-0 grow-0 basis-[130px] text-text">DayZ version</span>
-            <span class="break-all text-green-600 dark:text-green-400">{env.dayz_version}</span>
+        <span class="text-muted-foreground text-xs">
+          Removes partial mod downloads left by a cancelled launch so Steam stops re-downloading
+          them. Close Steam first — it must be shut down for cleanup to take effect.
+        </span>
+      </div>
+
+      <Separator />
+
+      <h3 class="text-sm font-medium">Diagnostics</h3>
+      {#if env}
+        <div class="flex flex-col gap-2 text-sm">
+          <div class="flex items-baseline gap-2.5">
+            <span class="text-muted-foreground w-32 shrink-0">App version</span>
+            <span class="break-all">{env.app_version}</span>
           </div>
-        {/if}
-      </div>
-    {:else}
-      <p class="text-[13px] leading-[1.45] text-text">Checking environment…</p>
-    {/if}
-  </div>
+          <div class="flex items-baseline gap-2.5">
+            <span class="text-muted-foreground w-32 shrink-0">Steam running</span>
+            {#if env.steam_running}
+              <span class="break-all text-green-600 dark:text-green-400">✓ running</span>
+            {:else}
+              <span class="break-all text-red-600 dark:text-red-400">✗ not running — open Steam and log in to download mods</span>
+            {/if}
+          </div>
+          <div class="flex items-baseline gap-2.5">
+            <span class="text-muted-foreground w-32 shrink-0">Steam install</span>
+            {#if env.steam_found}
+              <span class="break-all text-green-600 dark:text-green-400">✓ {env.steam_root} ({env.steam_kind})</span>
+            {:else}
+              <span class="break-all text-red-600 dark:text-red-400">✗ not found</span>
+            {/if}
+          </div>
+          <div class="flex items-baseline gap-2.5">
+            <span class="text-muted-foreground w-32 shrink-0">DayZ installed</span>
+            {#if env.dayz_installed}
+              <span class="break-all text-green-600 dark:text-green-400">✓ {env.dayz_path}</span>
+            {:else}
+              <span class="break-all text-red-600 dark:text-red-400">
+                ✗ not found — set the DayZ install location above, or restart Steam with the
+                drive mounted
+              </span>
+            {/if}
+          </div>
+          {#if env.dayz_version}
+            <div class="flex items-baseline gap-2.5">
+              <span class="text-muted-foreground w-32 shrink-0">DayZ version</span>
+              <span class="break-all text-green-600 dark:text-green-400">{env.dayz_version}</span>
+            </div>
+          {/if}
+        </div>
+      {:else}
+        <p class="text-muted-foreground text-sm">Checking environment…</p>
+      {/if}
+    </Card.Content>
+  </Card.Root>
 {/if}

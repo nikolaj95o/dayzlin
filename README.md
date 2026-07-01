@@ -9,6 +9,22 @@ Built with Rust + Tauri and shipped as a self-contained Flatpak (AppImage fallba
 > install** and no packaged build has been verified end-to-end. Treat this as a
 > work in progress, not a stable release. See [Roadmap to 1.0](#roadmap-to-10).
 
+## Why dayzlin?
+
+I built dayzlin because I couldn't find a simple, easy-to-install way to play modded
+DayZ on Linux. The alternatives each got in the way:
+
+- Other community launchers are complicated to set up, and some ship with poor
+  performance, major bugs, or unintuitive UIs that sit between you and the game.
+- The **official launcher subscribes** you to each server's mods in the Steam Workshop —
+  and then DayZ **won't start until every subscribed mod has finished downloading**, so a
+  single large or slow mod blocks the whole game.
+
+dayzlin aims to be the opposite: install it in one command (Flatpak), point it at a
+server, and play. It fetches the mods a server needs as **one-shot** Steam downloads
+without subscribing you to them — so nothing clutters your Workshop subscriptions and no
+forced pre-download blocks the game from launching.
+
 ## Features
 
 - Server browser: live server list with filters (map, first-person, password,
@@ -82,6 +98,35 @@ pulls the newest build.
   (produced once a `v*` tag is pushed). One-shot — no auto-update.
 - **Local Flatpak build**: see the build instructions in
   [`flatpak/io.github.nikolaj95o.dayzlin.yml`](flatpak/io.github.nikolaj95o.dayzlin.yml).
+
+## Uninstall
+
+### Flatpak
+
+```bash
+# remove the app together with its data (favorites, history, cached server list)
+flatpak uninstall --delete-data io.github.nikolaj95o.dayzlin
+
+# optional: also drop the dayzlin update remote
+flatpak remote-delete dayzlin
+```
+
+### AppImage / binary
+
+Delete the AppImage/binary you downloaded, then remove its data directory
+(profile, favorites/history, cached server list):
+
+```bash
+rm -rf ~/.local/share/io.github.nikolaj95o.dayzlin
+```
+
+### Mods dayzlin linked (both install types)
+
+dayzlin symlinks each server's mods into your DayZ folder
+(`steamapps/common/DayZ/@<Mod>`) and downloads the underlying Workshop items through
+Steam (`steamapps/workshop/content/221100/`). Uninstalling dayzlin leaves both in
+place — they belong to Steam/DayZ. To reclaim the space, delete the `@<Mod>` symlinks
+from the DayZ directory and remove the unwanted mods under `steamapps/workshop/content/221100/`.
 
 ## Build from source
 

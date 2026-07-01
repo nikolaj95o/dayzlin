@@ -188,6 +188,9 @@ dayzlin builds on the knowledge and approach of existing Linux DayZ tooling:
 - [dayzsalauncher](https://dayzsalauncher.com/) — dayzlin uses its public
   server-list API as the source of community server data.
 
+dayzlin is built with heavy use of **AI coding assistants** — much of the code,
+tests, and documentation is AI-generated, then reviewed and directed by a human.
+
 ## License
 
 [GPL-3.0-or-later](LICENSE). You may use, study, modify, and share it; any

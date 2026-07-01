@@ -85,7 +85,7 @@ pulls the newest build.
 
 ## Build from source
 
-Prerequisites: a Rust toolchain (stable), Node.js (≥ 20.19), and the Tauri Linux
+Prerequisites: a Rust toolchain (stable), Node.js (≥ 24), and the Tauri Linux
 system dependencies (`webkit2gtk-4.1`, `libappindicator`, `librsvg`, etc.).
 
 ```bash

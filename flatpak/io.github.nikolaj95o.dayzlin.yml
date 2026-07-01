@@ -3,7 +3,7 @@
 # Local test build (needs the runtime + SDK extensions installed first):
 #   flatpak install -y flathub org.gnome.Platform//47 org.gnome.Sdk//47 \
 #     org.freedesktop.Sdk.Extension.rust-stable//24.08 \
-#     org.freedesktop.Sdk.Extension.node22//24.08
+#     org.freedesktop.Sdk.Extension.node24//24.08
 #   flatpak run org.flatpak.Builder --force-clean --user --install \
 #     build-dir flatpak/io.github.nikolaj95o.dayzlin.yml
 #   flatpak run io.github.nikolaj95o.dayzlin
@@ -19,7 +19,7 @@ runtime-version: "47"
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
-  - org.freedesktop.Sdk.Extension.node22
+  - org.freedesktop.Sdk.Extension.node24
 command: dayzlin
 finish-args:
   - --share=network
@@ -37,7 +37,7 @@ modules:
   - name: dayzlin
     buildsystem: simple
     build-options:
-      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node24/bin
       build-args:
         - --share=network
     build-commands:

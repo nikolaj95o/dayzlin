@@ -20,7 +20,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run tauri build
@@ -65,7 +65,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.local/share/flatpak
-          key: flatpak-ext-gnome47-rust24.08-node24.08
+          key: flatpak-ext-gnome47-rust24.08-node24-24.08
           restore-keys: flatpak-ext-
 
       - name: Add Flathub remote + install SDK extensions
@@ -74,7 +74,7 @@ jobs:
             https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y flathub \
             org.freedesktop.Sdk.Extension.rust-stable//24.08 \
-            org.freedesktop.Sdk.Extension.node22//24.08
+            org.freedesktop.Sdk.Extension.node24//24.08
 
       # Persist the in-sandbox cargo/npm build across releases so warm runs only
       # recompile changed crates instead of the whole ~500-crate workspace.

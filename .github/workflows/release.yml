@@ -34,10 +34,10 @@ jobs:
   flatpak:
     runs-on: ubuntu-latest
     # Prebuilt image ships flatpak, flatpak-builder, ostree, git, gpg, and the
-    # GNOME 47 Platform + Sdk — so those don't get installed/downloaded per run.
+    # GNOME 50 Platform + Sdk — so those don't get installed/downloaded per run.
     # --privileged is needed for flatpak-builder's bubblewrap sandbox in a container.
     container:
-      image: bilelmoussaoui/flatpak-github-actions:gnome-47
+      image: bilelmoussaoui/flatpak-github-actions:gnome-50
       options: --privileged
     steps:
       - uses: actions/checkout@v5
@@ -65,7 +65,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.local/share/flatpak
-          key: flatpak-ext-gnome47-rust24.08-node24-24.08
+          key: flatpak-ext-gnome50-rust25.08-node24-25.08
           restore-keys: flatpak-ext-
 
       - name: Add Flathub remote + install SDK extensions
@@ -73,8 +73,8 @@ jobs:
           flatpak remote-add --user --if-not-exists flathub \
             https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y flathub \
-            org.freedesktop.Sdk.Extension.rust-stable//24.08 \
-            org.freedesktop.Sdk.Extension.node24//24.08
+            org.freedesktop.Sdk.Extension.rust-stable//25.08 \
+            org.freedesktop.Sdk.Extension.node24//25.08
 
       # Persist the in-sandbox cargo/npm build across releases so warm runs only
       # recompile changed crates instead of the whole ~500-crate workspace.

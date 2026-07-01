@@ -1,9 +1,9 @@
 # Flatpak manifest for dayzlin.
 #
 # Local test build (needs the runtime + SDK extensions installed first):
-#   flatpak install -y flathub org.gnome.Platform//47 org.gnome.Sdk//47 \
-#     org.freedesktop.Sdk.Extension.rust-stable//24.08 \
-#     org.freedesktop.Sdk.Extension.node24//24.08
+#   flatpak install -y flathub org.gnome.Platform//50 org.gnome.Sdk//50 \
+#     org.freedesktop.Sdk.Extension.rust-stable//25.08 \
+#     org.freedesktop.Sdk.Extension.node24//25.08
 #   flatpak run org.flatpak.Builder --force-clean --user --install \
 #     build-dir flatpak/io.github.nikolaj95o.dayzlin.yml
 #   flatpak run io.github.nikolaj95o.dayzlin
@@ -15,7 +15,7 @@
 # required for Flathub / desktop-menu integration (follow-up).
 id: io.github.nikolaj95o.dayzlin
 runtime: org.gnome.Platform
-runtime-version: "47"
+runtime-version: "50"
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable

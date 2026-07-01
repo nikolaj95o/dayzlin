@@ -144,6 +144,13 @@
   const historyServers = $derived(resolve(profile?.history ?? []));
   const isOffline = (s: Server) => !liveByKey.has(key(s.ip, s.game_port));
 
+  // Unique map names for the Map filter dropdown, drawn from the full cached list so options
+  // don't disappear as other filters narrow the visible results. Lowercased and deduped so
+  // maps differing only in case collapse to one option (the backend matches case-insensitively).
+  const mapOptions = $derived(
+    [...new Set(allServers.map((s) => s.map.toLowerCase()).filter(Boolean))].sort(),
+  );
+
   async function refreshProfile() {
     profile = await getProfile();
   }
@@ -187,7 +194,7 @@
   <div class="flex min-h-0 flex-1 flex-col" class:hidden={view !== "servers"}>
     <div class="flex flex-wrap items-center gap-3">
       <button class="btn" onclick={() => load(true)}>Refresh</button>
-      <FilterPanel bind:filter bind:query onChange={applyFilters} />
+      <FilterPanel bind:filter bind:query {mapOptions} onChange={applyFilters} />
     </div>
     <ServerTable {servers} {onSelect} {isFavorite} {onToggleFavorite} />
   </div>

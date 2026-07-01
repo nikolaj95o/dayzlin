@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Violet tile gradient -->
+    <linearGradient id="tile" x1="140" y1="120" x2="900" y2="920" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b661ff"/>
+      <stop offset="0.5" stop-color="#8a2ef0"/>
+      <stop offset="1" stop-color="#5a12b8"/>
+    </linearGradient>
+
+    <!-- Top sheen (glass highlight) -->
+    <linearGradient id="sheen" x1="512" y1="120" x2="512" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Smooth bottom shade (no hard seam) -->
+    <linearGradient id="bottomShade" x1="512" y1="500" x2="512" y2="940" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3a0a78" stop-opacity="0"/>
+      <stop offset="1" stop-color="#3a0a78" stop-opacity="0.30"/>
+    </linearGradient>
+
+    <!-- Belly gradient -->
+    <linearGradient id="belly" x1="512" y1="440" x2="512" y2="820" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e9e2f5"/>
+    </linearGradient>
+
+    <!-- Body gradient (near-black with cool sheen) -->
+    <linearGradient id="body" x1="300" y1="260" x2="720" y2="880" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3a2f4a"/>
+      <stop offset="0.45" stop-color="#1b1622"/>
+      <stop offset="1" stop-color="#0c0910"/>
+    </linearGradient>
+
+    <!-- Beak / feet -->
+    <linearGradient id="beak" x1="512" y1="470" x2="512" y2="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffb02e"/>
+      <stop offset="1" stop-color="#f08a12"/>
+    </linearGradient>
+    <linearGradient id="feet" x1="512" y1="800" x2="512" y2="900" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffb02e"/>
+      <stop offset="1" stop-color="#e87f0e"/>
+    </linearGradient>
+
+    <!-- Bandana -->
+    <linearGradient id="scarf" x1="360" y1="430" x2="660" y2="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff5a4d"/>
+      <stop offset="1" stop-color="#d81f2a"/>
+    </linearGradient>
+
+    <!-- Backpack strap -->
+    <linearGradient id="strap" x1="420" y1="470" x2="600" y2="820" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a98c5a"/>
+      <stop offset="1" stop-color="#7c6438"/>
+    </linearGradient>
+
+    <!-- Soft drop shadow for the whole tile -->
+    <filter id="tileShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="26" flood-color="#2a0a55" flood-opacity="0.45"/>
+    </filter>
+
+    <!-- Glow behind penguin -->
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="26" result="b"/>
+      <feColorMatrix in="b" type="matrix"
+        values="0 0 0 0 0.05  0 0 0 0 0.0  0 0 0 0 0.12  0 0 0 0.75 0"/>
+    </filter>
+
+    <clipPath id="tileClip">
+      <rect x="72" y="60" width="880" height="880" rx="196" ry="196"/>
+    </clipPath>
+  </defs>
+
+  <!-- Tile -->
+  <g filter="url(#tileShadow)">
+    <rect x="72" y="60" width="880" height="880" rx="196" ry="196" fill="url(#tile)"/>
+  </g>
+
+  <g clip-path="url(#tileClip)">
+    <!-- Glass sheen -->
+    <rect x="72" y="60" width="880" height="560" fill="url(#sheen)"/>
+    <!-- Bottom inner shade -->
+    <rect x="72" y="60" width="880" height="880" fill="url(#bottomShade)"/>
+
+    <!-- Soft glow disc behind penguin -->
+    <ellipse cx="512" cy="560" rx="240" ry="300" fill="#1a0640" filter="url(#glow)"/>
+
+    <!-- ===================== PENGUIN ===================== -->
+    <g>
+      <!-- Feet -->
+      <path d="M406 806 C 388 862, 356 884, 372 900 C 388 912, 470 906, 486 888 C 494 862, 470 812, 406 806 Z" fill="url(#feet)"/>
+      <path d="M618 806 C 636 862, 668 884, 652 900 C 636 912, 554 906, 538 888 C 530 862, 554 812, 618 806 Z" fill="url(#feet)"/>
+
+      <!-- Body -->
+      <path d="M512 246
+               C 372 246, 300 356, 300 512
+               C 300 720, 372 872, 512 872
+               C 652 872, 724 720, 724 512
+               C 724 356, 652 246, 512 246 Z" fill="url(#body)"/>
+
+      <!-- Belly -->
+      <path d="M512 402
+               C 430 402, 392 500, 392 622
+               C 392 748, 448 826, 512 826
+               C 576 826, 632 748, 632 622
+               C 632 500, 594 402, 512 402 Z" fill="url(#belly)"/>
+
+      <!-- Flippers -->
+      <path d="M320 470 C 286 540, 292 660, 330 720 C 348 700, 352 560, 352 500 C 344 480, 332 472, 320 470 Z" fill="url(#body)"/>
+      <path d="M704 470 C 738 540, 732 660, 694 720 C 676 700, 672 560, 672 500 C 680 480, 692 472, 704 470 Z" fill="url(#body)"/>
+
+      <!-- Backpack strap across belly -->
+      <path d="M452 452 C 470 560, 520 720, 560 832 L 612 820 C 566 700, 520 552, 508 448 Z" fill="url(#strap)"/>
+      <rect x="556" y="640" width="66" height="30" rx="7" transform="rotate(20 589 655)" fill="#5c4a28"/>
+
+      <!-- Eyes -->
+      <ellipse cx="466" cy="430" rx="42" ry="52" fill="#ffffff"/>
+      <ellipse cx="558" cy="430" rx="42" ry="52" fill="#ffffff"/>
+      <circle cx="474" cy="440" r="20" fill="#0c0910"/>
+      <circle cx="550" cy="440" r="20" fill="#0c0910"/>
+      <circle cx="481" cy="433" r="6" fill="#ffffff"/>
+      <circle cx="557" cy="433" r="6" fill="#ffffff"/>
+
+      <!-- Beak -->
+      <path d="M512 452 C 480 452, 462 476, 470 500 C 478 520, 546 520, 554 500 C 562 476, 544 452, 512 452 Z" fill="url(#beak)"/>
+      <path d="M470 500 C 486 516, 538 516, 554 500 C 546 512, 478 512, 470 500 Z" fill="#d8760c"/>
+
+      <!-- Bandana across the neck -->
+      <path d="M398 466 C 452 500, 572 500, 626 466 C 636 490, 630 512, 612 524 C 556 552, 468 552, 412 524 C 394 512, 388 490, 398 466 Z" fill="url(#scarf)"/>
+      <!-- knot -->
+      <path d="M612 486 C 646 486, 668 512, 660 540 C 640 536, 618 520, 610 500 Z" fill="#b81824"/>
+      <path d="M628 520 C 660 520, 676 556, 668 582 L 636 566 C 624 548, 620 534, 628 520 Z" fill="#e23340"/>
+    </g>
+  </g>
+
+  <!-- Inner bevel highlight -->
+  <rect x="74.5" y="62.5" width="875" height="875" rx="193.5" ry="193.5" fill="none" stroke="#ffffff" stroke-opacity="0.28" stroke-width="3"/>
+  <rect x="76" y="64" width="872" height="872" rx="192" ry="192" fill="none" stroke="#2a0a55" stroke-opacity="0.25" stroke-width="2"/>
+</svg>

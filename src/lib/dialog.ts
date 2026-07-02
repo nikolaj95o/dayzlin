@@ -20,8 +20,6 @@ export function closeDialog() {
 
 function titleFor(kind?: string): string {
   switch (kind) {
-    case "steam_not_running":
-      return "Steam isn't running";
     case "steam_not_downloading":
     case "download_stalled":
       return "Mod download problem";

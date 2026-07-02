@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::process::spawn_detached;
+use crate::process::open_uri;
 use crate::servers::Server;
 use crate::DAYZ_APP_ID;
 
@@ -29,13 +29,26 @@ pub fn build_launch_args(server: &Server, player: &str, password: Option<&str>) 
     args
 }
 
-/// Hand the launch off to Steam and return immediately. This is fire-and-forget on purpose:
-/// `steam -applaunch` either signals an already-running client (and exits at once) or has to
-/// cold-start Steam (which then stays in the foreground). Awaiting it would hang the UI on a cold
-/// start, and reaping the child would kill the Steam we just started — so we spawn detached.
-pub fn launch(args: &[String]) -> Result<(), Error> {
-    log::info!("launching: steam {}", args.join(" "));
-    spawn_detached("steam", args)
+/// Build the `steam://run/<appid>//<args>/` URL that launches DayZ with the given options.
+///
+/// We hand the launch to Steam as a URL (opened via the desktop portal) instead of spawning
+/// `steam -applaunch …` on the host, so the app needs no host-spawn permission. Steam appends the
+/// `//<args>` as the game's command-line options. Spaces are percent-encoded (they'd otherwise cut
+/// the URL short); the option punctuation Steam parses (`-`, `=`, `;`, `@`, `.`) is left literal.
+pub fn build_launch_url(server: &Server, player: &str, password: Option<&str>) -> String {
+    let args = build_launch_args(server, player, password).join(" ");
+    format!(
+        "steam://run/{DAYZ_APP_ID}//{}/",
+        args.replace('%', "%25").replace(' ', "%20")
+    )
+}
+
+/// Hand the launch off to Steam and return immediately. Fire-and-forget: opening the `steam://`
+/// URL signals an already-running client or cold-starts Steam, and there's no child to await.
+pub fn launch(server: &Server, player: &str, password: Option<&str>) -> Result<(), Error> {
+    let url = build_launch_url(server, player, password);
+    log::info!("launching: {url}");
+    open_uri(&url)
 }
 
 #[cfg(test)]
@@ -93,5 +106,17 @@ mod tests {
         s.mods.clear();
         let args = build_launch_args(&s, "x", None);
         assert!(!args.iter().any(|a| a.starts_with("-mod=")));
+    }
+
+    #[test]
+    fn builds_run_url_with_encoded_spaces() {
+        let url = build_launch_url(&server(), "survivor", None);
+        assert!(url.starts_with("steam://run/221100//"));
+        assert!(url.ends_with('/'));
+        // Spaces between options are encoded; option punctuation stays literal.
+        assert!(url.contains("-applaunch%20221100%20-nolauncher"));
+        assert!(url.contains("-mod=@1;@2"));
+        assert!(url.contains("-connect=5.6.7.8"));
+        assert!(!url.contains(' '));
     }
 }

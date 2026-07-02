@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use dayz_core::launch::{build_launch_args, launch};
+use dayz_core::launch::launch;
 use dayz_core::mods::{
     delete_installed_mod as core_delete_installed_mod, dir_size_bytes, ensure_mod_symlinks,
     is_download_complete, lowercase_mod_tree, missing_mods, remove_workshop_download,
     scan_installed_mods, scan_installed_mods_detailed, workshop_download_url, InstalledModInfo,
 };
-use dayz_core::process::{spawn_detached, steam_running, RealRunner};
+use dayz_core::process::{open_uri, steam_running};
 use dayz_core::profile::{Profile, ServerRef};
 use dayz_core::servers::{
     apply_filter, cache_read, cache_write, dedupe_by_endpoint, fetch_mod_sizes, fetch_servers,
@@ -184,7 +184,7 @@ pub async fn reconcile_downloads(app: &tauri::AppHandle) -> CleanupReport {
         .filter(|id| !is_download_complete(&workshop, *id))
         .collect();
 
-    if steam_running(&RealRunner::new()).await {
+    if steam_running(&home()) {
         // Persist just the still-incomplete leftovers; don't touch Steam's files while it's up.
         write_pending_downloads(&path, &leftovers);
         return CleanupReport {
@@ -369,7 +369,6 @@ async fn run_play(
 ) -> Result<(), CommandError> {
     app.emit("launch-progress", LaunchProgress::Preparing).ok();
 
-    let runner = RealRunner::new();
     let mut profile = Profile::load(&data_dir(app).join("profile.json"));
 
     // Without a player name DayZ launches into the default "Survivor" profile. Fail fast with
@@ -410,17 +409,10 @@ async fn run_play(
     let installed = scan_installed_mods(&workshop);
     let missing = missing_mods(&server.mods, &installed);
 
-    // Mods download by asking the running Steam client to fetch them (see `workshop_download_url`),
-    // so a live, logged-in client is required. Fail fast with actionable guidance rather than firing
-    // `steam://` URLs that would silently do nothing (or cold-start Steam mid-launch).
-    if !missing.is_empty() && !steam_running(&runner).await {
-        return Err(cmd_err(
-            "steam_not_running",
-            "Open Steam and log in, then try again — dayzlin downloads mods through the running \
-             Steam client.",
-            None,
-        ));
-    }
+    // We don't preflight "is Steam running?": each mod download fires a `steam://` URL, which
+    // cold-starts Steam if needed, and the launch does the same — so nothing blocks the user. If
+    // Steam is down (or logged out) the download loop below surfaces it as a start/stall timeout
+    // with actionable guidance.
 
     // Best-effort total download sizes so the progress dialog can show "X MB of Y MB".
     // An empty map (network/parse failure) just falls back to a totals-less display.
@@ -456,7 +448,7 @@ async fn run_play(
         let pending_path = pending_downloads_path(app);
         add_pending_download(&pending_path, *id);
         let url = workshop_download_url(*id);
-        spawn_detached("steam", &[url]).map_err(|e| to_command_error(&e))?;
+        open_uri(&url).map_err(|e| to_command_error(&e))?;
 
         let downloads = dayz.workshop_downloads_dir().join(id.to_string());
         let mut tick = tokio::time::interval(std::time::Duration::from_millis(500));
@@ -537,8 +529,7 @@ async fn run_play(
     }
     ensure_mod_symlinks(&game, &workshop, &ids).map_err(|e| to_command_error(&e))?;
 
-    let args = build_launch_args(server, &profile.player, password.as_deref());
-    launch(&args).map_err(|e| to_command_error(&e))?;
+    launch(server, &profile.player, password.as_deref()).map_err(|e| to_command_error(&e))?;
 
     // Record the launch in history (most recent first, deduped by ip+port). Best-effort: a
     // failed save must not fail an already-launched game.
@@ -597,8 +588,7 @@ pub struct EnvReport {
 /// launch is present. Infallible — missing pieces are reported as `false`/`None`.
 #[tauri::command]
 pub async fn check_environment(app: tauri::AppHandle) -> EnvReport {
-    let runner = RealRunner::new();
-    let steam_is_running = steam_running(&runner).await;
+    let steam_is_running = steam_running(&home());
     let profile = Profile::load(&data_dir(&app).join("profile.json"));
 
     let (steam_found, steam_kind, steam_root) = match SteamInstall::detect_in(&home()) {
@@ -644,12 +634,16 @@ fn is_document_portal_path(path: &str) -> bool {
             .is_some_and(|(_uid, rest)| rest.starts_with("doc/"))
 }
 
-/// Turn a folder the user picked into a stored `steam_root`. In a Flatpak the file chooser can't
-/// reach a library on e.g. `/mnt`, so the document portal re-exports it under
-/// `/run/user/<uid>/doc/<id>/...` and hands back that portal path — per-session and useless as a
-/// persisted override. Recover the real host path from the `user.document-portal.host-path` xattr
-/// the portal FUSE exposes, then normalize to a Steam library root (the picker usually lands on the
-/// game dir). Outside a sandbox — or when the attr is absent — the input is just normalized.
+/// Turn a folder the user picked into a stored `steam_root`, then normalize it to a Steam library
+/// root (the picker usually lands on the game/library dir).
+///
+/// The file chooser hands back a real path for locations we can already reach — default-location
+/// Steam libraries, covered by our narrow `:rw` grants — and a document-portal path
+/// (`/run/user/<uid>/doc/<id>/...`) for anything else (e.g. a library on `/mnt`). For a portal path
+/// we prefer the real host path from the `user.document-portal.host-path` xattr *when we can
+/// actually reach it* (stable across restarts). When we can't — a custom mount reachable only
+/// through the portal grant — we keep the portal path and operate through it: the document portal
+/// gives rw to exactly that subtree (symlinks and manifest edits reflect to the real files).
 #[tauri::command]
 pub fn resolve_dayz_path(path: String) -> String {
     let resolved = if is_document_portal_path(&path) {
@@ -657,6 +651,7 @@ pub fn resolve_dayz_path(path: String) -> String {
             .ok()
             .flatten()
             .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+            .filter(|host| std::path::Path::new(host).exists())
             .unwrap_or(path)
     } else {
         path
@@ -699,7 +694,7 @@ pub fn delete_installed_mod(id: u64, app: tauri::AppHandle) -> Result<(), Comman
 #[tauri::command]
 pub fn open_workshop_page(id: u64) -> Result<(), CommandError> {
     let url = format!("steam://url/CommunityFilePage/{id}");
-    spawn_detached("steam", &[url]).map_err(|e| to_command_error(&e))
+    open_uri(&url).map_err(|e| to_command_error(&e))
 }
 
 /// Open a mod's install directory in the user's file manager.
@@ -709,8 +704,9 @@ pub fn open_mod_folder(id: u64, app: tauri::AppHandle) -> Result<(), CommandErro
     let dayz =
         locate_dayz(&home(), profile.steam_root.as_deref()).map_err(|e| to_command_error(&e))?;
     let path = dayz.workshop_dir().join(id.to_string());
-    spawn_detached("xdg-open", &[path.to_string_lossy().into_owned()])
-        .map_err(|e| to_command_error(&e))
+    // A file:// URI so the runtime's portal-backed `xdg-open` hands it to OpenURI (opens the host
+    // file manager) without any host-spawn permission.
+    open_uri(&format!("file://{}", path.display())).map_err(|e| to_command_error(&e))
 }
 
 #[cfg(test)]

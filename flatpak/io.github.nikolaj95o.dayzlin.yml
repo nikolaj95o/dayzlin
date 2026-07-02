@@ -26,13 +26,23 @@ finish-args:
   - --socket=fallback-x11
   - --socket=wayland
   - --device=dri
-  # host-spawn Steam / ping:
-  - --talk-name=org.freedesktop.Flatpak
-  # read/write Steam libraries wherever they live — the game/workshop/mod dirs can be on any
-  # mount (e.g. /mnt/FAST/SteamLibrary), and a narrower set would break auto-detect and mod
-  # linking for those. `host` excludes ~/.var/app, so grant Flatpak Steam explicitly:
-  - --filesystem=host:rw
-  - --filesystem=~/.var/app/com.valvesoftware.Steam:rw
+  # No host-spawn / --talk-name=org.freedesktop.Flatpak: launching the game, workshop downloads,
+  # opening the workshop page and the mod folder all leave as steam://…/file:// URIs handed to the
+  # OpenURI portal (via the runtime's own xdg-open), so Steam handles them on the host without us
+  # holding an arbitrary-spawn permission.
+  #
+  # Native Steam's own locations, read/write. Covers Steam's config (libraryfolders.vdf), the
+  # steam.pipe "is Steam running?" probe used before editing Steam-owned files, and the
+  # game/workshop dirs of a default-location library. These are the user's own dot-dirs, so
+  # Flathub doesn't flag them. Write access is required — installing/linking/removing mods writes
+  # into the library (symlinks, workshop content, appworkshop_*.acf).
+  #
+  # Anything not covered here — a library on another mount (e.g. /mnt/FAST/SteamLibrary), or a
+  # *Flatpak* Steam install (~/.var/app/com.valvesoftware.Steam, which Flathub forbids granting
+  # statically) — is granted dynamically at runtime when the user points the app at it via the file
+  # chooser (document portal, rw to just that subtree). So we need no broad `host` access.
+  - --filesystem=~/.steam:rw
+  - --filesystem=~/.local/share/Steam:rw
 modules:
   - name: dayzlin
     buildsystem: simple

@@ -25,6 +25,16 @@
   import { showError } from "./lib/dialog";
   import { startLaunch, setLaunch, closeLaunch } from "./lib/launch";
   import { Button } from "$lib/components/ui/button/index.js";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import Minus from "@lucide/svelte/icons/minus";
+  import Square from "@lucide/svelte/icons/square";
+  import Copy from "@lucide/svelte/icons/copy";
+  import X from "@lucide/svelte/icons/x";
+
+  // Native decorations are disabled (tauri.conf.json) so we draw our own titlebar; the
+  // header below is the drag region and hosts the min/max/close controls.
+  const appWindow = getCurrentWindow();
+  let isMaximized = $state(false);
 
   type View = "servers" | "favorites" | "history" | "mods" | "settings";
 
@@ -210,14 +220,23 @@
     const un = listen<LaunchProgress>("launch-progress", (e) => {
       setLaunch(e.payload);
     });
+    // Keep the maximize/restore icon in sync with the actual window state (maximizing via
+    // double-click on the drag region, keyboard, or the compositor all fire onResized).
+    appWindow.isMaximized().then((m) => (isMaximized = m));
+    const unResize = appWindow.onResized(() => {
+      appWindow.isMaximized().then((m) => (isMaximized = m));
+    });
     return () => {
       un.then((f) => f());
+      unResize.then((f) => f());
     };
   });
 </script>
 
-<main class="mx-auto flex h-screen w-full max-w-6xl flex-col box-border px-4 pt-4 pb-12 sm:px-5">
-  <header class="flex flex-wrap items-center gap-4">
+<!-- Full-width column so the custom titlebar (and its window controls) spans the whole window;
+     the body below stays centered in the max-w-6xl content column. -->
+<div class="flex h-screen flex-col">
+  <header data-tauri-drag-region class="flex items-center gap-4 px-4 pt-4 sm:px-5">
     <h1 class="mt-2 mb-4 text-3xl font-semibold">dayzlin</h1>
     <nav class="ml-auto flex gap-1.5">
       <Button variant={view === "servers" ? "secondary" : "ghost"} size="sm" onclick={() => show("servers")}>Servers</Button>
@@ -226,8 +245,20 @@
       <Button variant={view === "mods" ? "secondary" : "ghost"} size="sm" onclick={() => show("mods")}>Mods</Button>
       <Button variant={view === "settings" ? "secondary" : "ghost"} size="sm" onclick={() => show("settings")}>Settings</Button>
     </nav>
+    <div class="flex gap-1">
+      <Button variant="ghost" size="icon-sm" aria-label="Minimize" onclick={() => appWindow.minimize()}>
+        <Minus />
+      </Button>
+      <Button variant="ghost" size="icon-sm" aria-label={isMaximized ? "Restore" : "Maximize"} onclick={() => appWindow.toggleMaximize()}>
+        {#if isMaximized}<Copy />{:else}<Square />{/if}
+      </Button>
+      <Button variant="ghost" size="icon-sm" aria-label="Close" class="hover:bg-destructive hover:text-white" onclick={() => appWindow.close()}>
+        <X />
+      </Button>
+    </div>
   </header>
 
+  <main class="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col box-border px-4 pb-12 sm:px-5">
   <p class="text-muted-foreground my-2 font-mono text-sm">{status}</p>
 
   <!-- Keep the Servers view mounted and hide it with CSS so switching tabs doesn't destroy and
@@ -249,7 +280,8 @@
   {:else if view === "mods"}
     <ModsTable {mods} {favoriteCount} onDelete={onDeleteMod} emptyLabel="No installed mods" />
   {/if}
-</main>
+  </main>
 
-<MessageDialog />
-<LaunchDialog />
+  <MessageDialog />
+  <LaunchDialog />
+</div>

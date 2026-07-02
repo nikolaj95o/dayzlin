@@ -5,6 +5,10 @@ GenericName=DayZ Launcher
 Comment=Browse and launch DayZ servers on Linux
 Exec=dayzlin
 Icon=io.github.nikolaj95o.dayzlin
+# The GTK/Wayland window advertises app_id "dayzlin" (from the binary name), which doesn't
+# match this file's reverse-DNS id, so KWin/GNOME can't resolve the icon by id alone. This maps
+# that window class back to this entry so the icon (and task grouping) resolve.
+StartupWMClass=dayzlin
 Terminal=false
 Categories=Game;
 Keywords=DayZ;Steam;server;launcher;

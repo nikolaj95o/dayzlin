@@ -15,8 +15,9 @@ on:
         type: string
         required: true
 
-permissions:
-  contents: write
+# No top-level permissions here: a reusable workflow can't request more than its
+# caller grants. It inherits the caller's token perms instead — release-pr.yml
+# grants read (dry-run, no upload); release-publish.yml / release.yml grant write.
 
 jobs:
   build:

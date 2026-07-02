@@ -27,6 +27,7 @@ export interface ServerFilter {
   max_mods: number | null;
   min_players: number | null;
   has_slots: boolean;
+  not_empty: boolean;
   same_version_only: boolean;
 }
 export interface ServerRef {

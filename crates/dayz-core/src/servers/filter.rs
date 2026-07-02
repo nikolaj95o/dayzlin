@@ -12,6 +12,9 @@ pub struct ServerFilter {
     pub max_mods: Option<usize>,
     pub min_players: Option<u32>,
     pub has_slots: bool,
+    /// Hide empty (0-player) servers.
+    #[serde(default)]
+    pub not_empty: bool,
     /// Hide servers whose build differs from the installed DayZ. Applied in the command layer
     /// (it needs the installed version), not in [`apply_filter`].
     #[serde(default)]
@@ -33,6 +36,7 @@ pub fn apply_filter(servers: &[Server], f: &ServerFilter) -> Vec<Server> {
         .filter(|s| f.max_mods.map_or(true, |max| s.mods.len() <= max))
         .filter(|s| f.min_players.map_or(true, |min| s.players >= min))
         .filter(|s| !f.has_slots || s.players < s.max_players)
+        .filter(|s| !f.not_empty || s.players > 0)
         .cloned()
         .collect()
 }
@@ -148,6 +152,25 @@ mod tests {
         assert_eq!(
             out.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
             vec!["open"]
+        );
+    }
+
+    #[test]
+    fn filters_not_empty() {
+        let servers = vec![
+            srv("empty", "x", true, false, 0, 60, 0),
+            srv("populated", "x", true, false, 3, 60, 0),
+        ];
+        let out = apply_filter(
+            &servers,
+            &ServerFilter {
+                not_empty: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            out.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+            vec!["populated"]
         );
     }
 

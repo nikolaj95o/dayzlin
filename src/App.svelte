@@ -46,6 +46,7 @@
     max_mods: null,
     min_players: null,
     has_slots: false,
+    not_empty: false,
     same_version_only: true,
   });
   let status = $state("");
@@ -59,6 +60,7 @@
     max_mods: null,
     min_players: null,
     has_slots: false,
+    not_empty: false,
     same_version_only: false,
   };
 

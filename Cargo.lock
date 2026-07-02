@@ -609,7 +609,7 @@ dependencies = [
 
 [[package]]
 name = "dayz-core"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "fuzzy-matcher",
  "libc",
@@ -624,7 +624,7 @@ dependencies = [
 
 [[package]]
 name = "dayzlin"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "dayz-core",
  "log",

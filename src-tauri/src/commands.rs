@@ -663,9 +663,7 @@ pub fn resolve_dayz_path(path: String) -> String {
 
 /// List every installed workshop mod with its on-disk size and last-used time, for the Mods tab.
 #[tauri::command]
-pub fn list_installed_mods(
-    app: tauri::AppHandle,
-) -> Result<Vec<InstalledModInfo>, CommandError> {
+pub fn list_installed_mods(app: tauri::AppHandle) -> Result<Vec<InstalledModInfo>, CommandError> {
     let profile = Profile::load(&data_dir(&app).join("profile.json"));
     let dayz =
         locate_dayz(&home(), profile.steam_root.as_deref()).map_err(|e| to_command_error(&e))?;

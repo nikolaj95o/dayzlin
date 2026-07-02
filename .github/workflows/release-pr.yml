@@ -7,6 +7,10 @@ on:
   pull_request:
     branches: [master]
 
+# Dry-run only: no publishing, so read is enough. The reusable workflow inherits this.
+permissions:
+  contents: read
+
 jobs:
   version:
     if: startsWith(github.head_ref, 'release/')

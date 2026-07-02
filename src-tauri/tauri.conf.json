@@ -29,7 +29,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["appimage"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -39,6 +40,14 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgyQjFCRjYxRkM4QzE1MTIKUldRU0ZZejhZYit4Z3V2eGI4enU5MTVYelUwSXFLMk5yMXRxaGprbTg4YVZ5L1p2TXRCM2VjMkoK",
+      "endpoints": [
+        "https://github.com/nikolaj95o/dayzlin/releases/latest/download/latest.json"
+      ]
     }
   }
 }

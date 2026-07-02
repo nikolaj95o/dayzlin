@@ -1,5 +1,16 @@
 # dayzlin
 
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/nikolaj95o/dayzlin?color=brightgreen&logo=github)](https://github.com/nikolaj95o/dayzlin/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/nikolaj95o/dayzlin/ci.yml?branch=master&logo=github&label=CI)](https://github.com/nikolaj95o/dayzlin/actions/workflows/ci.yml)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/nikolaj95o/dayzlin/total?logo=github&label=downloads)](https://github.com/nikolaj95o/dayzlin/releases)
+[![Stars](https://img.shields.io/github/stars/nikolaj95o/dayzlin?logo=github)](https://github.com/nikolaj95o/dayzlin/stargazers)
+
+[![Platform](https://img.shields.io/badge/platform-Linux-orange?logo=linux)](https://github.com/nikolaj95o/dayzlin)
+[![Rust](https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![Tauri](https://img.shields.io/badge/Tauri-24C8DB?logo=tauri&logoColor=white)](https://tauri.app)
+[![Svelte](https://img.shields.io/badge/Svelte-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev)
+
 A graphical **DayZ launcher for Linux** — browse and filter community servers,
 install the mods they require through the running Steam client, then launch and connect.
 Built with Rust + Tauri and shipped as a self-contained Flatpak (AppImage fallback).
@@ -94,10 +105,10 @@ pulls the newest build.
 
 ### Other options
 
-- **AppImage / binary**: attached to each [GitHub Release](https://github.com/nikolaj95o/dayzlin/releases)
+- **AppImage**: attached to each [GitHub Release](https://github.com/nikolaj95o/dayzlin/releases)
   (produced once a `v*` tag is pushed). One-shot — no auto-update.
-- **Local Flatpak build**: see the build instructions in
-  [`flatpak/io.github.nikolaj95o.dayzlin.yml`](flatpak/io.github.nikolaj95o.dayzlin.yml).
+- **Local Flatpak build**: `npm run flatpak` (build + install for testing) — see
+  [Local Flatpak build](#local-flatpak-build).
 
 ## Uninstall
 
@@ -111,9 +122,9 @@ flatpak uninstall --delete-data io.github.nikolaj95o.dayzlin
 flatpak remote-delete dayzlin
 ```
 
-### AppImage / binary
+### AppImage
 
-Delete the AppImage/binary you downloaded, then remove its data directory
+Delete the AppImage you downloaded, then remove its data directory
 (profile, favorites/history, cached server list):
 
 ```bash
@@ -140,7 +151,7 @@ npm ci
 # run in development (opens the app, hot-reloads the UI)
 npm run tauri dev
 
-# production build (AppImage + deb + rpm + binary under target/release/)
+# production build (AppImage under target/release/bundle/, binary under target/release/)
 npm run tauri build
 ```
 
@@ -148,6 +159,26 @@ npm run tauri build
 > `strip: ... unknown type [0x13] section '.relr.dyn'` because the `strip`
 > bundled in `linuxdeploy` is older than the system toolchain. Build with
 > stripping disabled: `NO_STRIP=true npm run tauri build`.
+
+### Local Flatpak build
+
+To build and install the Flatpak locally, use the `flatpak` scripts. This mirrors the
+packaged build, so it's the way to reproduce sandbox-only behaviour (e.g. document-portal
+file access to Steam libraries on other mounts):
+
+```bash
+# one-time: install the runtime + SDK extensions the manifest builds against
+flatpak install -y flathub org.gnome.Platform//50 org.gnome.Sdk//50 \
+  org.freedesktop.Sdk.Extension.rust-stable//25.08 \
+  org.freedesktop.Sdk.Extension.node24//25.08
+
+npm run flatpak       # build + install the user-scoped Flatpak (stage-cached — fast rebuilds)
+npm run flatpak:run   # launch it
+```
+
+The user-scoped install coexists with, and takes precedence over, any system-wide install,
+so this is safe to run alongside a released build. Full manifest details are in
+[`flatpak/io.github.nikolaj95o.dayzlin.yml`](flatpak/io.github.nikolaj95o.dayzlin.yml).
 
 The Rust core library lives in `crates/dayz-core` (UI-agnostic, fully unit-tested
 behind a mockable command runner). The Tauri app crate is `src-tauri`; the Svelte

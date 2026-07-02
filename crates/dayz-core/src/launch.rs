@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::process::open_uri;
+use crate::process::{self, SteamChannel};
 use crate::servers::Server;
 use crate::DAYZ_APP_ID;
 
@@ -43,12 +43,22 @@ pub fn build_launch_url(server: &Server, player: &str, password: Option<&str>) -
     )
 }
 
-/// Hand the launch off to Steam and return immediately. Fire-and-forget: opening the `steam://`
-/// URL signals an already-running client or cold-starts Steam, and there's no child to await.
-pub fn launch(server: &Server, player: &str, password: Option<&str>) -> Result<(), Error> {
+/// Hand the launch off to Steam and return immediately (fire-and-forget: there's no child to await).
+///
+/// The `Direct` and `Pipe` channels deliver the `-applaunch …` **args** (CLI form), which skips the
+/// desktop MIME chooser *and* Steam's `steam://run` command-confirmation dialog; the `Portal`
+/// fallback opens the `steam://run` **URL** (which may prompt). See [`process::steam_channel`].
+pub fn launch(
+    channel: &SteamChannel,
+    server: &Server,
+    player: &str,
+    password: Option<&str>,
+) -> Result<(), Error> {
+    let args = build_launch_args(server, player, password);
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let url = build_launch_url(server, player, password);
-    log::info!("launching: {url}");
-    open_uri(&url)
+    log::info!("launching via {channel:?}: steam {}", refs.join(" "));
+    process::steam_command_or_uri(channel, &refs, &url)
 }
 
 #[cfg(test)]

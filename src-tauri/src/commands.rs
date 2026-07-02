@@ -7,13 +7,16 @@ use dayz_core::mods::{
     is_download_complete, lowercase_mod_tree, missing_mods, remove_workshop_download,
     scan_installed_mods, scan_installed_mods_detailed, workshop_download_url, InstalledModInfo,
 };
-use dayz_core::process::{open_uri, steam_running};
+use dayz_core::process::{open_uri, steam_channel, steam_command_or_uri, steam_running};
 use dayz_core::profile::{Profile, ServerRef};
 use dayz_core::servers::{
     apply_filter, cache_read, cache_write, dedupe_by_endpoint, fetch_mod_sizes, fetch_servers,
     fuzzy_search, Server, ServerFilter,
 };
-use dayz_core::steam::{app_launch_ready, dayz_app_state, library_root, locate_dayz, SteamInstall};
+use dayz_core::steam::{
+    app_launch_ready, dayz_app_state, granted_level, library_claiming_dayz, library_root,
+    locate_dayz, GrantLevel, SteamInstall,
+};
 use dayz_core::version::{read_installed_version, version_match};
 use tauri::{Emitter, Manager, State};
 use tokio_util::sync::CancellationToken;
@@ -406,6 +409,11 @@ async fn run_play(
     let workshop = dayz.workshop_dir();
     let game = dayz.game_dir();
 
+    // Resolve once how to talk to Steam for every download and the launch below: native → fire the
+    // `steam` binary directly; sandboxed → forward through Steam's pipe helper; otherwise → portal
+    // `open_uri` fallback. All to skip the MIME chooser / `steam://run` confirmation where we can.
+    let steam_ch = steam_channel(&home());
+
     let installed = scan_installed_mods(&workshop);
     let missing = missing_mods(&server.mods, &installed);
 
@@ -448,7 +456,7 @@ async fn run_play(
         let pending_path = pending_downloads_path(app);
         add_pending_download(&pending_path, *id);
         let url = workshop_download_url(*id);
-        open_uri(&url).map_err(|e| to_command_error(&e))?;
+        steam_command_or_uri(&steam_ch, &[&url], &url).map_err(|e| to_command_error(&e))?;
 
         let downloads = dayz.workshop_downloads_dir().join(id.to_string());
         let mut tick = tokio::time::interval(std::time::Duration::from_millis(500));
@@ -529,7 +537,8 @@ async fn run_play(
     }
     ensure_mod_symlinks(&game, &workshop, &ids).map_err(|e| to_command_error(&e))?;
 
-    launch(server, &profile.player, password.as_deref()).map_err(|e| to_command_error(&e))?;
+    launch(&steam_ch, server, &profile.player, password.as_deref())
+        .map_err(|e| to_command_error(&e))?;
 
     // Record the launch in history (most recent first, deduped by ip+port). Best-effort: a
     // failed save must not fail an already-launched game.
@@ -582,6 +591,10 @@ pub struct EnvReport {
     pub dayz_installed: bool,
     pub dayz_path: Option<String>,
     pub dayz_version: Option<String>,
+    /// The library `libraryfolders.vdf` says owns DayZ, when we can't otherwise reach it (e.g. an
+    /// off-mount library the sandbox can't stat). Lets the UI offer a one-click "grant access to
+    /// <path>" that opens the file chooser pre-aimed there. `None` when DayZ isn't in any vdf.
+    pub dayz_library_hint: Option<String>,
 }
 
 /// Probe the environment so the user can see whether everything needed to install mods and
@@ -606,11 +619,15 @@ pub async fn check_environment(app: tauri::AppHandle) -> EnvReport {
         match locate_dayz(&home(), profile.steam_root.as_deref()) {
             Ok(d) => (
                 true,
-                Some(d.game_dir().display().to_string()),
+                // Show the real host path, not the raw `/run/user/.../doc/...` portal mount.
+                Some(display_path(&d.game_dir())),
                 read_installed_version(&d.game_dir()),
             ),
             Err(_) => (false, None, None),
         };
+
+    // The exact library folder to grant when DayZ is known to Steam but unreachable from here.
+    let dayz_library_hint = library_claiming_dayz(&home()).map(|p| p.display().to_string());
 
     EnvReport {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -621,6 +638,7 @@ pub async fn check_environment(app: tauri::AppHandle) -> EnvReport {
         dayz_installed,
         dayz_path,
         dayz_version,
+        dayz_library_hint,
     }
 }
 
@@ -634,31 +652,93 @@ fn is_document_portal_path(path: &str) -> bool {
             .is_some_and(|(_uid, rest)| rest.starts_with("doc/"))
 }
 
-/// Turn a folder the user picked into a stored `steam_root`, then normalize it to a Steam library
-/// root (the picker usually lands on the game/library dir).
+/// The real host path a document-portal mount points at (its `user.document-portal.host-path`
+/// xattr). Readable on the FUSE mount even when the target itself lies outside the sandbox, so it
+/// works for an off-mount library we can't otherwise stat. `None` when the xattr is absent.
+fn portal_host_path(path: &str) -> Option<String> {
+    xattr::get(path, "user.document-portal.host-path")
+        .ok()
+        .flatten()
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Resolve a stored path to what the user should see: a document-portal path shows its real host
+/// target (e.g. `/mnt/FAST/SteamLibrary/...` rather than `/run/user/1000/doc/<id>/...`); anything
+/// else is shown unchanged.
+fn display_path(path: &std::path::Path) -> String {
+    let s = path.to_string_lossy();
+    if is_document_portal_path(&s) {
+        portal_host_path(&s).unwrap_or_else(|| s.clone().into_owned())
+    } else {
+        s.into_owned()
+    }
+}
+
+/// Outcome of turning a picked folder into a stored `steam_root`. `ok` says whether it's a usable
+/// DayZ library; `display_path` is the real host path to show the user; `message` explains a
+/// rejection so the UI can guide the user to re-pick the right folder.
+#[derive(Debug, serde::Serialize)]
+pub struct ResolvedDayzPath {
+    pub steam_root: String,
+    pub display_path: String,
+    pub ok: bool,
+    pub message: Option<String>,
+}
+
+/// Turn a folder the user picked into a stored `steam_root`.
 ///
 /// The file chooser hands back a real path for locations we can already reach — default-location
 /// Steam libraries, covered by our narrow `:rw` grants — and a document-portal path
-/// (`/run/user/<uid>/doc/<id>/...`) for anything else (e.g. a library on `/mnt`). For a portal path
-/// we prefer the real host path from the `user.document-portal.host-path` xattr *when we can
-/// actually reach it* (stable across restarts). When we can't — a custom mount reachable only
-/// through the portal grant — we keep the portal path and operate through it: the document portal
-/// gives rw to exactly that subtree (symlinks and manifest edits reflect to the real files).
+/// (`/run/user/<uid>/doc/<id>/...`) for anything else (e.g. a library on `/mnt`). An off-mount
+/// library is *only* reachable through that portal grant, so we keep the portal path as
+/// `steam_root` and operate through it (rw to exactly that subtree); the real host path from the
+/// `user.document-portal.host-path` xattr is used purely for display and messaging. We validate the
+/// pick *through the mount* (`<path>/steamapps/common/DayZ`) — the mount is the only place the
+/// files are reachable — and reject a pick that's too deep (the game/`common`/`steamapps` folder),
+/// since a portal grant can't be climbed back up to the library root.
 #[tauri::command]
-pub fn resolve_dayz_path(path: String) -> String {
-    let resolved = if is_document_portal_path(&path) {
-        xattr::get(&path, "user.document-portal.host-path")
-            .ok()
-            .flatten()
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-            .filter(|host| std::path::Path::new(host).exists())
-            .unwrap_or(path)
-    } else {
-        path
-    };
-    library_root(std::path::Path::new(&resolved))
+pub fn resolve_dayz_path(path: String) -> ResolvedDayzPath {
+    if is_document_portal_path(&path) {
+        let host = portal_host_path(&path).unwrap_or_else(|| path.clone());
+        if std::path::Path::new(&path)
+            .join("steamapps/common/DayZ")
+            .is_dir()
+        {
+            return ResolvedDayzPath {
+                steam_root: path,
+                display_path: host,
+                ok: true,
+                message: None,
+            };
+        }
+        let message = match granted_level(std::path::Path::new(&host)) {
+            GrantLevel::TooDeep => format!(
+                "You picked a folder inside the Steam library. Pick the library folder that \
+                 contains `steamapps` instead — e.g. {}.",
+                library_root(std::path::Path::new(&host)).display()
+            ),
+            GrantLevel::LibraryRoot => "That folder isn't a DayZ Steam library (no \
+                 steamapps/common/DayZ inside). Pick the Steam library folder that contains DayZ."
+                .to_string(),
+        };
+        return ResolvedDayzPath {
+            steam_root: String::new(),
+            display_path: host,
+            ok: false,
+            message: Some(message),
+        };
+    }
+    // A path we can already reach (default-location library or manual entry): normalize it to the
+    // library root and trust the diagnostics probe to report whether DayZ is actually there.
+    let root = library_root(std::path::Path::new(&path))
         .to_string_lossy()
-        .into_owned()
+        .into_owned();
+    ResolvedDayzPath {
+        steam_root: root.clone(),
+        display_path: root,
+        ok: true,
+        message: None,
+    }
 }
 
 /// List every installed workshop mod with its on-disk size and last-used time, for the Mods tab.
@@ -692,7 +772,8 @@ pub fn delete_installed_mod(id: u64, app: tauri::AppHandle) -> Result<(), Comman
 #[tauri::command]
 pub fn open_workshop_page(id: u64) -> Result<(), CommandError> {
     let url = format!("steam://url/CommunityFilePage/{id}");
-    open_uri(&url).map_err(|e| to_command_error(&e))
+    let ch = steam_channel(&home());
+    steam_command_or_uri(&ch, &[&url], &url).map_err(|e| to_command_error(&e))
 }
 
 /// Open a mod's install directory in the user's file manager.
@@ -705,6 +786,255 @@ pub fn open_mod_folder(id: u64, app: tauri::AppHandle) -> Result<(), CommandErro
     // A file:// URI so the runtime's portal-backed `xdg-open` hands it to OpenURI (opens the host
     // file manager) without any host-spawn permission.
     open_uri(&format!("file://{}", path.display())).map_err(|e| to_command_error(&e))
+}
+
+// ---------------------------------------------------------------------------
+// App self-update
+//
+// Two package formats, two mechanisms:
+//   * AppImage — `tauri-plugin-updater` downloads a signed replacement from the GitHub release
+//     (verified against the embedded pubkey) and swaps the running image.
+//   * Flatpak — the `org.freedesktop.portal.Flatpak` UpdateMonitor deploys the update from the
+//     app's OSTree remote. This is the sandbox-correct path: it needs no host-spawn / `flatpak`
+//     access, so it doesn't undo the manifest's deliberately narrow permissions.
+// A plain/dev binary reports backend "none" and can't self-update.
+//
+// The *availability* check (current vs. latest) is shared: it hits the GitHub "latest release"
+// API for both formats. The gh-pages Flatpak repo and the GitHub tag are stamped from the same CI
+// version, so the number lines up regardless of how the user installed the app.
+// ---------------------------------------------------------------------------
+
+/// Which packaging the running app was launched from, deciding how (and whether) it can update.
+fn detect_backend() -> &'static str {
+    if std::env::var_os("APPIMAGE").is_some() {
+        "appimage"
+    } else if std::path::Path::new("/.flatpak-info").exists()
+        || std::env::var_os("FLATPAK_ID").is_some()
+    {
+        "flatpak"
+    } else {
+        "none"
+    }
+}
+
+/// Break a dotted version ("0.1.10") into numeric components for ordered comparison. Any
+/// non-numeric suffix on a component is ignored, and `Vec<u64>` compares lexicographically, so
+/// 0.1.10 > 0.1.3 as expected.
+fn parse_ver(v: &str) -> Vec<u64> {
+    v.split('.')
+        .map(|p| {
+            p.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0)
+        })
+        .collect()
+}
+
+/// The tag of the newest GitHub release, with any leading `v` stripped (e.g. "0.1.4").
+async fn github_latest_version() -> Result<String, CommandError> {
+    #[derive(serde::Deserialize)]
+    struct Release {
+        tag_name: String,
+    }
+    let net = |e: reqwest::Error| {
+        cmd_err(
+            "network",
+            "Couldn't reach GitHub to check for updates.",
+            Some(e.to_string()),
+        )
+    };
+    let rel: Release = reqwest::Client::new()
+        .get("https://api.github.com/repos/nikolaj95o/dayzlin/releases/latest")
+        // GitHub rejects requests without a User-Agent.
+        .header(reqwest::header::USER_AGENT, "dayzlin-updater")
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(net)?
+        .error_for_status()
+        .map_err(net)?
+        .json()
+        .await
+        .map_err(net)?;
+    Ok(rel.tag_name.trim_start_matches('v').to_string())
+}
+
+/// Update availability + how (if at all) it can be applied; mirrors the TS `UpdateStatus`.
+#[derive(serde::Serialize)]
+pub struct UpdateStatus {
+    /// "appimage" | "flatpak" | "none".
+    pub backend: String,
+    pub current_version: String,
+    /// Newest published version, or `None` if GitHub was unreachable.
+    pub latest_version: Option<String>,
+    pub update_available: bool,
+    /// Whether `install_update` can actually apply it (false for a plain/dev binary).
+    pub apply_supported: bool,
+}
+
+/// Report whether a newer release exists. Infallible — a network failure just leaves
+/// `latest_version` unset (no update offered) rather than surfacing an error, so the startup
+/// auto-check stays quiet.
+#[tauri::command]
+pub async fn check_for_updates() -> UpdateStatus {
+    let backend = detect_backend();
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    let latest = github_latest_version().await.ok();
+    let update_available = latest
+        .as_deref()
+        .is_some_and(|l| parse_ver(l) > parse_ver(&current));
+    UpdateStatus {
+        backend: backend.to_string(),
+        current_version: current,
+        latest_version: latest,
+        update_available,
+        apply_supported: backend != "none",
+    }
+}
+
+/// Download, apply, and restart into the newest release. Diverges (restarts the process) on
+/// success; returns an error the frontend can show otherwise.
+#[tauri::command]
+pub async fn install_update(app: tauri::AppHandle) -> Result<(), CommandError> {
+    match detect_backend() {
+        "appimage" => appimage_update(&app).await,
+        "flatpak" => flatpak_update(&app).await,
+        _ => Err(cmd_err(
+            "update",
+            "This build can't update itself. Download the latest AppImage from the releases page.",
+            None,
+        )),
+    }
+}
+
+/// AppImage: let `tauri-plugin-updater` verify + swap the image, then restart into it.
+async fn appimage_update(app: &tauri::AppHandle) -> Result<(), CommandError> {
+    use tauri_plugin_updater::UpdaterExt;
+    let up = |msg: &str, e: tauri_plugin_updater::Error| cmd_err("update", msg, Some(e.to_string()));
+    let update = app
+        .updater()
+        .map_err(|e| up("The updater is unavailable.", e))?
+        .check()
+        .await
+        .map_err(|e| up("Couldn't check for an update.", e))?
+        .ok_or_else(|| cmd_err("update", "No update is available.", None))?;
+    update
+        .download_and_install(|_chunk, _total| {}, || {})
+        .await
+        .map_err(|e| up("Failed to download or install the update.", e))?;
+    app.restart();
+}
+
+fn portal_err(e: zbus::Error) -> CommandError {
+    cmd_err(
+        "update",
+        "Couldn't talk to the Flatpak update portal.",
+        Some(e.to_string()),
+    )
+}
+
+/// Flatpak: ask the portal to deploy the update from our OSTree remote, then restart into it.
+async fn flatpak_update(app: &tauri::AppHandle) -> Result<(), CommandError> {
+    use futures_util::StreamExt;
+
+    let conn = zbus::Connection::session().await.map_err(portal_err)?;
+    let portal = FlatpakPortalProxy::new(&conn).await.map_err(portal_err)?;
+    let monitor_path = portal
+        .create_update_monitor(std::collections::HashMap::new())
+        .await
+        .map_err(portal_err)?;
+    let monitor = UpdateMonitorProxy::builder(&conn)
+        .path(monitor_path)
+        .map_err(portal_err)?
+        .build()
+        .await
+        .map_err(portal_err)?;
+
+    // Subscribe before triggering so the first progress signal can't race past us.
+    let mut progress = monitor
+        .receive_update_progress()
+        .await
+        .map_err(portal_err)?;
+    monitor
+        .update("", std::collections::HashMap::new())
+        .await
+        .map_err(portal_err)?;
+
+    // Drive to a terminal status: 0 running, 1 empty (nothing to deploy), 2 done, 3 error.
+    loop {
+        let sig = tokio::time::timeout(std::time::Duration::from_secs(600), progress.next())
+            .await
+            .map_err(|_| cmd_err("update", "Timed out waiting for the Flatpak update.", None))?;
+        let Some(sig) = sig else {
+            return Err(cmd_err(
+                "update",
+                "The Flatpak update monitor closed unexpectedly.",
+                None,
+            ));
+        };
+        let info = sig.args().map_err(portal_err)?.info;
+        let status = info
+            .get("status")
+            .and_then(|v| u32::try_from(v.clone()).ok())
+            .unwrap_or(0);
+        match status {
+            0 => continue,
+            2 => break,
+            1 => {
+                let _ = monitor.close().await;
+                return Err(cmd_err(
+                    "update",
+                    "The Flatpak remote has no update available yet. Try again shortly.",
+                    None,
+                ));
+            }
+            _ => {
+                let detail = info
+                    .get("error_message")
+                    .and_then(|v| String::try_from(v.clone()).ok());
+                let _ = monitor.close().await;
+                return Err(cmd_err("update", "The Flatpak update failed.", detail));
+            }
+        }
+    }
+    let _ = monitor.close().await;
+    app.restart();
+}
+
+/// `org.freedesktop.portal.Flatpak` — creating the per-app update monitor.
+#[zbus::proxy(
+    interface = "org.freedesktop.portal.Flatpak",
+    default_service = "org.freedesktop.portal.Flatpak",
+    default_path = "/org/freedesktop/portal/Flatpak"
+)]
+trait FlatpakPortal {
+    fn create_update_monitor(
+        &self,
+        options: std::collections::HashMap<&str, zbus::zvariant::Value<'_>>,
+    ) -> zbus::Result<zbus::zvariant::OwnedObjectPath>;
+}
+
+/// The monitor object returned above: trigger an update and watch its progress.
+#[zbus::proxy(
+    interface = "org.freedesktop.portal.Flatpak.UpdateMonitor",
+    default_service = "org.freedesktop.portal.Flatpak"
+)]
+trait UpdateMonitor {
+    fn update(
+        &self,
+        parent_window: &str,
+        options: std::collections::HashMap<&str, zbus::zvariant::Value<'_>>,
+    ) -> zbus::Result<()>;
+
+    fn close(&self) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn update_progress(
+        &self,
+        info: std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+    ) -> zbus::Result<()>;
 }
 
 #[cfg(test)]

@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "flatpak": "flatpak run org.flatpak.Builder --user --install --force-clean build-dir flatpak/io.github.nikolaj95o.dayzlin.yml",
+    "flatpak:run": "flatpak run io.github.nikolaj95o.dayzlin"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

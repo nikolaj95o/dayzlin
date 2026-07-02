@@ -23,6 +23,7 @@
   import MessageDialog from "./lib/MessageDialog.svelte";
   import LaunchDialog from "./lib/LaunchDialog.svelte";
   import { showError } from "./lib/dialog";
+  import { updateAvailable, refreshUpdateStatus } from "./lib/update.svelte";
   import { startLaunch, setLaunch, closeLaunch } from "./lib/launch";
   import { Button } from "$lib/components/ui/button/index.js";
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -217,6 +218,8 @@
       if (stale) load(true, true);
     });
     refreshProfile();
+    // Quiet, best-effort: lights the Settings-tab dot if a newer release exists.
+    refreshUpdateStatus();
     const un = listen<LaunchProgress>("launch-progress", (e) => {
       setLaunch(e.payload);
     });
@@ -243,7 +246,10 @@
       <Button variant={view === "favorites" ? "secondary" : "ghost"} size="sm" onclick={() => show("favorites")}>Favorites</Button>
       <Button variant={view === "history" ? "secondary" : "ghost"} size="sm" onclick={() => show("history")}>History</Button>
       <Button variant={view === "mods" ? "secondary" : "ghost"} size="sm" onclick={() => show("mods")}>Mods</Button>
-      <Button variant={view === "settings" ? "secondary" : "ghost"} size="sm" onclick={() => show("settings")}>Settings</Button>
+      <Button variant={view === "settings" ? "secondary" : "ghost"} size="sm" onclick={() => show("settings")}>
+        Settings
+        {#if updateAvailable()}<span class="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-amber-500 align-middle" title="Update available"></span>{/if}
+      </Button>
     </nav>
     <div class="flex gap-1">
       <Button variant="ghost" size="icon-sm" aria-label="Minimize" onclick={() => appWindow.minimize()}>

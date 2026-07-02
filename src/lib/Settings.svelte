@@ -5,10 +5,12 @@
     checkEnvironment,
     cleanupDownloads,
     resolveDayzPath,
+    installUpdate,
     type Profile,
     type EnvReport,
   } from "./api";
-  import { showError } from "./dialog";
+  import { updateState, refreshUpdateStatus } from "./update.svelte";
+  import { showError, showMessage } from "./dialog";
   import { open } from "@tauri-apps/plugin-dialog";
   import { theme, setTheme, type ThemePref } from "./theme.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
@@ -24,6 +26,20 @@
   let env = $state<EnvReport | null>(null);
   let cleaning = $state(false);
   let cleanupMsg = $state<string | null>(null);
+  // App self-update: `st` is the shared status; the flags gate the two async actions.
+  let st = $derived(updateState.status);
+  let checking = $state(false);
+  let updating = $state(false);
+  let updateMsg = $state<string | null>(null);
+  // Real host path behind a document-portal steam_root, shown so the user sees /mnt/... instead of
+  // the opaque /run/user/.../doc/... mount.
+  let steamDisplay = $state<string | null>(null);
+
+  // A document-portal FUSE path (/run/user/<uid>/doc/... or /run/flatpak/doc/...); the picker hands
+  // these back for folders outside the sandbox.
+  function isPortalPath(p: string | null): boolean {
+    return !!p && (p.startsWith("/run/flatpak/doc/") || /^\/run\/user\/[^/]+\/doc\//.test(p));
+  }
 
   async function loadP() {
     profile = await getProfile();
@@ -31,6 +47,10 @@
   async function loadEnv() {
     try {
       env = await checkEnvironment();
+      // Surface the real host path when the configured folder is an opaque portal mount.
+      if (isPortalPath(profile?.steam_root ?? null) && env.dayz_path) {
+        steamDisplay = env.dayz_path;
+      }
     } catch (e) {
       showError(e);
     }
@@ -48,17 +68,30 @@
     // Re-probe so the DayZ-install diagnostic reflects a changed override immediately.
     loadEnv();
   }
-  async function browseDayz() {
+  async function browseDayz(seed?: string) {
     if (!profile) return;
     try {
       const dir = await open({
         directory: true,
+        // Pre-aim the picker at the library Steam says owns DayZ (best-effort; the portal may
+        // ignore it), else the currently-configured folder.
+        defaultPath: seed ?? profile.steam_root ?? undefined,
         title: "Select your Steam library folder (contains steamapps)",
       });
       if (typeof dir === "string") {
         // In a Flatpak the picker returns a document-portal path (/run/user/.../doc/...) for
-        // folders outside the sandbox; resolve it back to the real host library root before saving.
-        profile.steam_root = await resolveDayzPath(dir);
+        // folders outside the sandbox; resolve/validate it before saving.
+        const res = await resolveDayzPath(dir);
+        if (!res.ok) {
+          showMessage({
+            title: "Select the Steam library folder",
+            message:
+              res.message ?? "That folder isn't a DayZ Steam library.",
+          });
+          return;
+        }
+        profile.steam_root = res.steam_root;
+        steamDisplay = res.display_path;
         await saveP();
       }
     } catch (e) {
@@ -84,6 +117,34 @@
       showError(e);
     } finally {
       cleaning = false;
+    }
+  }
+  async function checkUpdates() {
+    checking = true;
+    updateMsg = null;
+    try {
+      const s = await refreshUpdateStatus();
+      if (!s) return;
+      if (s.latest_version == null) {
+        updateMsg = "Couldn't reach GitHub to check. Try again later.";
+      } else if (!s.update_available) {
+        updateMsg = `Up to date (${s.current_version}).`;
+      }
+      // When an update *is* available the button block below renders instead of a message.
+    } finally {
+      checking = false;
+    }
+  }
+  async function applyUpdate() {
+    updating = true;
+    updateMsg = null;
+    try {
+      // On success the process restarts into the new version and never returns here.
+      await installUpdate();
+    } catch (e) {
+      showError(e);
+    } finally {
+      updating = false;
     }
   }
   loadP();
@@ -123,12 +184,17 @@
             bind:value={profile.steam_root}
             placeholder="auto-detect (e.g. /mnt/FAST/SteamLibrary)"
           />
-          <Button variant="outline" type="button" onclick={browseDayz}>Browse…</Button>
+          <Button variant="outline" type="button" onclick={() => browseDayz()}>Browse…</Button>
         </div>
         <span class="text-muted-foreground text-xs">
           Folder containing <code>steamapps</code>. Leave blank to detect automatically from
           your Steam libraries.
         </span>
+        {#if isPortalPath(profile.steam_root) && steamDisplay}
+          <span class="text-muted-foreground text-xs">
+            Granted via the file portal → <code class="break-all">{steamDisplay}</code>
+          </span>
+        {/if}
       </div>
 
       <div class="flex items-center gap-2.5">
@@ -163,6 +229,52 @@
           <div class="flex items-baseline gap-2.5">
             <span class="text-muted-foreground w-32 shrink-0">App version</span>
             <span class="break-all">{env.app_version}</span>
+            {#if st?.update_available}
+              <span class="text-amber-600 dark:text-amber-400 text-xs">● update available</span>
+            {/if}
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center gap-2.5">
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onclick={checkUpdates}
+                disabled={checking || updating}
+              >
+                {checking ? "Checking…" : "Check for updates"}
+              </Button>
+              {#if st?.update_available}
+                <span class="text-sm">
+                  Update available: {st.current_version} → {st.latest_version}
+                </span>
+              {:else if updateMsg}
+                <span class="text-muted-foreground text-sm">{updateMsg}</span>
+              {/if}
+            </div>
+            {#if st?.update_available}
+              {#if st.apply_supported}
+                <div class="flex items-center gap-2.5">
+                  <Button size="sm" type="button" onclick={applyUpdate} disabled={updating}>
+                    {updating
+                      ? st.backend === "flatpak"
+                        ? "Updating…"
+                        : "Downloading…"
+                      : "Update & restart"}
+                  </Button>
+                  <span class="text-muted-foreground text-xs">
+                    {st.backend === "flatpak"
+                      ? "Installs the update via Flatpak and restarts dayzlin."
+                      : "Downloads the new AppImage, verifies its signature, and restarts dayzlin."}
+                  </span>
+                </div>
+              {:else}
+                <span class="text-muted-foreground text-xs">
+                  This build can't update itself — download the latest release from
+                  <code class="break-all">github.com/nikolaj95o/dayzlin/releases/latest</code>.
+                </span>
+              {/if}
+            {/if}
           </div>
           <div class="flex items-baseline gap-2.5">
             <span class="text-muted-foreground w-32 shrink-0">Steam running</span>
@@ -191,6 +303,22 @@
               </span>
             {/if}
           </div>
+          {#if !env.dayz_installed && env.dayz_library_hint}
+            <div class="flex flex-col gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onclick={() => browseDayz(env!.dayz_library_hint!)}
+              >
+                Grant access to {env.dayz_library_hint}
+              </Button>
+              <span class="text-muted-foreground text-xs">
+                Steam has DayZ here, but it's on a drive this app can't read until you grant
+                access. Click to pick that folder in the file chooser.
+              </span>
+            </div>
+          {/if}
           {#if env.dayz_version}
             <div class="flex items-baseline gap-2.5">
               <span class="text-muted-foreground w-32 shrink-0">DayZ version</span>

@@ -147,12 +147,17 @@ fn library_candidates(home: &Path) -> Vec<PathBuf> {
 
 /// Normalize a user-supplied path to a Steam *library root* (the dir containing `steamapps`).
 /// The folder picker and manual entry often land on a deeper path — the game dir
-/// (`<lib>/steamapps/common/DayZ`) or the `<lib>/steamapps` dir — so strip those suffixes back
-/// to the library root. Any other path is returned unchanged.
+/// (`<lib>/steamapps/common/DayZ`), the `<lib>/steamapps/common` dir, or the `<lib>/steamapps` dir
+/// — so strip those suffixes back to the library root. Any other path is returned unchanged.
 pub fn library_root(path: &Path) -> PathBuf {
     if path.ends_with("steamapps/common/DayZ") {
         // <lib>/steamapps/common/DayZ -> <lib>
         if let Some(lib) = path.parent().and_then(Path::parent).and_then(Path::parent) {
+            return lib.to_path_buf();
+        }
+    }
+    if path.ends_with("steamapps/common") {
+        if let Some(lib) = path.parent().and_then(Path::parent) {
             return lib.to_path_buf();
         }
     }
@@ -162,6 +167,73 @@ pub fn library_root(path: &Path) -> PathBuf {
         }
     }
     path.to_path_buf()
+}
+
+/// Where a picked folder sits relative to a Steam *library root* (the dir containing `steamapps`).
+/// The app needs the library root; a deeper pick (`steamapps`, `.../common`, or `.../common/DayZ`)
+/// can't be climbed back up through a document-portal grant, so callers must reject it and ask the
+/// user to re-pick the library folder. See [`granted_level`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GrantLevel {
+    LibraryRoot,
+    TooDeep,
+}
+
+/// Classify a picked path by how deep it sits relative to the library root. A path ending in
+/// `steamapps`, `steamapps/common`, or `steamapps/common/DayZ` is [`GrantLevel::TooDeep`];
+/// anything else is treated as a [`GrantLevel::LibraryRoot`] candidate.
+pub fn granted_level(path: &Path) -> GrantLevel {
+    if path.ends_with("steamapps")
+        || path.ends_with("steamapps/common")
+        || path.ends_with("steamapps/common/DayZ")
+    {
+        GrantLevel::TooDeep
+    } else {
+        GrantLevel::LibraryRoot
+    }
+}
+
+/// The Steam library that `libraryfolders.vdf` records as owning DayZ, if any. Block-scans the
+/// first vdf found (same locations as [`library_candidates`]) for the library whose `apps` map
+/// lists [`DAYZ_APP_ID`] and returns its `"path"`. Unlike [`locate_dayz`] this touches nothing but
+/// the vdf, so it still finds a library on a mount the sandbox can't stat (e.g.
+/// `/mnt/FAST/SteamLibrary`) — used to point the user at the exact folder to grant.
+pub fn library_claiming_dayz(home: &Path) -> Option<PathBuf> {
+    let vdf_locations = [
+        home.join(".steam/steam/steamapps/libraryfolders.vdf"),
+        home.join(".local/share/Steam/steamapps/libraryfolders.vdf"),
+        home.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps/libraryfolders.vdf"),
+        home.join(".steam/root/config/libraryfolders.vdf"),
+    ];
+    let vdf = vdf_locations
+        .iter()
+        .find_map(|p| fs::read_to_string(p).ok())?;
+    library_claiming_dayz_in(&vdf)
+}
+
+/// The first quoted token on a VDF line, i.e. the key of a `"<key>"  "<value>"` pair or a section
+/// header like `"apps"`.
+fn first_quoted_token(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix('"')?;
+    let end = rest.find('"')?;
+    Some(&rest[..end])
+}
+
+/// Pure inner scan of a `libraryfolders.vdf` body (testable without a home dir). Each library block
+/// holds a `"path"` line followed by an `"apps"` sub-block mapping `"<appid>" "<bytes>"`; return the
+/// `"path"` of the block whose apps list [`DAYZ_APP_ID`].
+fn library_claiming_dayz_in(vdf: &str) -> Option<PathBuf> {
+    let needle = DAYZ_APP_ID.to_string();
+    let mut current_path: Option<PathBuf> = None;
+    for line in vdf.lines() {
+        let line = line.trim();
+        match first_quoted_token(line) {
+            Some("path") => current_path = parse_library_paths(line).into_iter().next(),
+            Some(key) if key == needle && current_path.is_some() => return current_path,
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Locate a DayZ install across all Steam libraries. Resolution order: a non-empty
@@ -295,8 +367,74 @@ mod tests {
     fn library_root_strips_known_suffixes() {
         let lib = PathBuf::from("/mnt/FAST/SteamLibrary");
         assert_eq!(library_root(&lib.join("steamapps/common/DayZ")), lib);
+        assert_eq!(library_root(&lib.join("steamapps/common")), lib);
         assert_eq!(library_root(&lib.join("steamapps")), lib);
         assert_eq!(library_root(&lib), lib);
+    }
+
+    #[test]
+    fn granted_level_flags_paths_below_the_library_root() {
+        let lib = PathBuf::from("/mnt/FAST/SteamLibrary");
+        assert_eq!(granted_level(&lib), GrantLevel::LibraryRoot);
+        assert_eq!(granted_level(&lib.join("steamapps")), GrantLevel::TooDeep);
+        assert_eq!(
+            granted_level(&lib.join("steamapps/common")),
+            GrantLevel::TooDeep
+        );
+        assert_eq!(
+            granted_level(&lib.join("steamapps/common/DayZ")),
+            GrantLevel::TooDeep
+        );
+    }
+
+    #[test]
+    fn finds_library_claiming_dayz_by_appid() {
+        // The block whose `apps` map lists DayZ (221100) wins, even though an earlier library also
+        // has apps — mirrors a real vdf with the game on a secondary mount.
+        let vdf = r#"
+"libraryfolders"
+{
+    "0"
+    {
+        "path"		"/home/me/.local/share/Steam"
+        "apps"
+        {
+            "228980"		"235109032"
+        }
+    }
+    "1"
+    {
+        "path"		"/mnt/FAST/SteamLibrary"
+        "apps"
+        {
+            "730"		"67960769488"
+            "221100"		"25351000508"
+        }
+    }
+}
+"#;
+        assert_eq!(
+            library_claiming_dayz_in(vdf),
+            Some(PathBuf::from("/mnt/FAST/SteamLibrary"))
+        );
+    }
+
+    #[test]
+    fn no_library_claims_dayz_when_appid_absent() {
+        let vdf = r#"
+"libraryfolders"
+{
+    "0"
+    {
+        "path"		"/home/me/.local/share/Steam"
+        "apps"
+        {
+            "228980"		"235109032"
+        }
+    }
+}
+"#;
+        assert_eq!(library_claiming_dayz_in(vdf), None);
     }
 
     #[test]

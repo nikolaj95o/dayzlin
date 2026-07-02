@@ -35,7 +35,34 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Sign the AppImage for the in-app updater. bundle.createUpdaterArtifacts is enabled, so this
+      # emits an *.AppImage.sig next to the image; the build fails without the signing key, so the
+      # TAURI_SIGNING_PRIVATE_KEY secret must be set (the generated key has no password → empty).
       - run: npm run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+      # The updater fetches this manifest from the release's `latest` download URL; it pins the
+      # version, the AppImage URL, and the detached signature the client verifies against the
+      # embedded pubkey. base64 signature is single-line and JSON-safe, so we inline it.
+      - name: Generate updater manifest (latest.json)
+        if: ${{ inputs.publish }}
+        run: |
+          APPIMAGE=$(ls target/release/bundle/appimage/*.AppImage | head -n1)
+          NAME=$(basename "$APPIMAGE")
+          SIG=$(cat "$APPIMAGE.sig")
+          cat > latest.json <<EOF
+          {
+            "version": "${{ inputs.version }}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "linux-x86_64": {
+                "signature": "$SIG",
+                "url": "https://github.com/nikolaj95o/dayzlin/releases/download/v${{ inputs.version }}/$NAME"
+              }
+            }
+          }
+          EOF
       # Workspace target dir is at the repo root, not under src-tauri/.
       # There's no tag ref on a PR/merge-triggered run, so name it explicitly.
       - uses: softprops/action-gh-release@v3
@@ -44,7 +71,8 @@ jobs:
           tag_name: v${{ inputs.version }}
           files: |
             target/release/bundle/appimage/*.AppImage
-            target/release/dayzlin
+            target/release/bundle/appimage/*.AppImage.sig
+            latest.json
 
   flatpak:
     runs-on: ubuntu-latest

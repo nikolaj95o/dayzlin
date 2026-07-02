@@ -8,6 +8,7 @@ use commands::AppState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // Log in release too, so mod-download and launch failures are diagnosable (writes
             // to the app log dir + stdout).
@@ -48,6 +49,8 @@ pub fn run() {
             commands::delete_installed_mod,
             commands::open_workshop_page,
             commands::open_mod_folder,
+            commands::check_for_updates,
+            commands::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

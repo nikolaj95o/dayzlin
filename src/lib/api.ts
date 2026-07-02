@@ -67,6 +67,29 @@ export interface EnvReport {
   dayz_installed: boolean;
   dayz_path: string | null;
   dayz_version: string | null;
+  // Library folder libraryfolders.vdf says owns DayZ when it's otherwise unreachable; drives the
+  // one-click "grant access" action. Null when DayZ isn't in any vdf.
+  dayz_library_hint: string | null;
+}
+
+// App self-update status; mirrors the Rust `UpdateStatus`. `backend` is how the app was packaged
+// and thus how it updates: "appimage" (tauri-plugin-updater), "flatpak" (portal), or "none"
+// (plain/dev binary — can't self-update). `latest_version` is null when GitHub was unreachable.
+export interface UpdateStatus {
+  backend: "appimage" | "flatpak" | "none";
+  current_version: string;
+  latest_version: string | null;
+  update_available: boolean;
+  apply_supported: boolean;
+}
+
+// Result of resolving a picked folder into a stored steam_root; mirrors the Rust `ResolvedDayzPath`.
+export interface ResolvedDayzPath {
+  steam_root: string;
+  // Real host path to show the user (portal paths resolve to their /mnt/... target).
+  display_path: string;
+  ok: boolean;
+  message: string | null;
 }
 
 // Result of a leftover-download cleanup pass; mirrors the Rust `CleanupReport` struct.
@@ -108,7 +131,7 @@ export const checkEnvironment = () =>
 export const cleanupDownloads = () =>
   invoke<CleanupReport>("cleanup_downloads");
 export const resolveDayzPath = (path: string) =>
-  invoke<string>("resolve_dayz_path", { path });
+  invoke<ResolvedDayzPath>("resolve_dayz_path", { path });
 export const listInstalledMods = () =>
   invoke<InstalledMod[]>("list_installed_mods");
 export const deleteInstalledMod = (id: number) =>
@@ -117,3 +140,8 @@ export const openWorkshopPage = (id: number) =>
   invoke<void>("open_workshop_page", { id });
 export const openModFolder = (id: number) =>
   invoke<void>("open_mod_folder", { id });
+export const checkForUpdates = () =>
+  invoke<UpdateStatus>("check_for_updates");
+// Downloads, applies, and restarts into the new release; only resolves on failure (success
+// restarts the process).
+export const installUpdate = () => invoke<void>("install_update");

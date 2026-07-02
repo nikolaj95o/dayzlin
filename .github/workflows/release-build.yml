@@ -1,0 +1,173 @@
+name: Release build
+
+# Reusable build/publish workflow. Called with publish=false for the release-PR
+# dry-run (build only, prove the artifacts compile) and publish=true on merge /
+# manual tag (upload the GitHub Release + sign & deploy the flatpak repo).
+on:
+  workflow_call:
+    inputs:
+      publish:
+        description: When true, upload the GitHub Release and sign+deploy the flatpak repo.
+        type: boolean
+        default: false
+      version:
+        description: Release version without leading "v" (e.g. 0.1.5).
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run tauri build
+      # Workspace target dir is at the repo root, not under src-tauri/.
+      # There's no tag ref on a PR/merge-triggered run, so name it explicitly.
+      - uses: softprops/action-gh-release@v3
+        if: ${{ inputs.publish }}
+        with:
+          tag_name: v${{ inputs.version }}
+          files: |
+            target/release/bundle/appimage/*.AppImage
+            target/release/dayzlin
+
+  flatpak:
+    runs-on: ubuntu-latest
+    # Prebuilt image ships flatpak, flatpak-builder, ostree, git, gpg. There's no
+    # gnome-50 tag (gnome-47 is the newest), so we pin the tooling image to gnome-47
+    # and install the GNOME 50 Platform + Sdk from Flathub below (cached per run).
+    # --privileged is needed for flatpak-builder's bubblewrap sandbox in a container.
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:gnome-47
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v5
+
+      # Restore the previously published repo so new builds add an incremental
+      # commit instead of replacing history (clients then get small updates).
+      - uses: actions/checkout@v5
+        if: ${{ inputs.publish }}
+        continue-on-error: true          # first-ever run: gh-pages doesn't exist yet
+        with:
+          ref: gh-pages
+          path: site
+      - run: mkdir -p site/repo
+
+      - name: Import GPG signing key
+        if: ${{ inputs.publish }}
+        env:
+          FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+        run: |
+          echo "$FLATPAK_GPG_PRIVATE_KEY" | gpg --batch --import
+          KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')
+          echo "FLATPAK_GPG_KEYID=$KEYID" >> "$GITHUB_ENV"
+
+      # The user install holds only what we add below (+ ostree metadata), so it's
+      # a self-contained cache. Bump the key suffix when these versions change.
+      - name: Cache Flatpak runtime + SDK extensions
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/flatpak
+          key: flatpak-rt-gnome50-rust25.08-node24-25.08
+          restore-keys: flatpak-rt-
+
+      - name: Add Flathub remote + install runtime and SDK extensions
+        run: |
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub \
+            org.gnome.Platform//50 \
+            org.gnome.Sdk//50 \
+            org.freedesktop.Sdk.Extension.rust-stable//25.08 \
+            org.freedesktop.Sdk.Extension.node24//25.08
+
+      # Persist the in-sandbox cargo/npm build across releases so warm runs only
+      # recompile changed crates instead of the whole ~500-crate workspace.
+      - name: Cache cargo + npm (in-sandbox build)
+        uses: actions/cache@v4
+        with:
+          path: /cargo-cache
+          key: flatpak-cargo-${{ hashFiles('Cargo.lock', 'package-lock.json') }}
+          restore-keys: flatpak-cargo-
+      - run: mkdir -p /cargo-cache
+
+      # Patch the manifest in place (CI only — never committed) to bind-mount the
+      # cache dir into the build sandbox and point cargo/npm at it. /cargo-cache is
+      # outside home, so flatpak doesn't remap the path; CARGO_TARGET_DIR there
+      # survives --force-clean and gets saved by actions/cache above.
+      - name: Patch manifest with CI build cache
+        run: |
+          curl -L https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+            -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq
+          yq -i '
+            (.modules[] | select(.name=="dayzlin") | .build-options.build-args) += ["--filesystem=/cargo-cache"] |
+            (.modules[] | select(.name=="dayzlin") | .build-options.env) =
+              {"CARGO_HOME":"/cargo-cache/cargo","CARGO_TARGET_DIR":"/cargo-cache/target","npm_config_cache":"/cargo-cache/npm"}
+          ' flatpak/io.github.nikolaj95o.dayzlin.yml
+
+      # Stamp the metainfo <release> with the release version so `flatpak list --app`
+      # reports it. The committed seed keeps local test builds valid; this overwrites
+      # it (CI only — never committed) so the published build always matches.
+      - name: Stamp metainfo release from version
+        run: |
+          VER="${{ inputs.version }}"
+          sed -i -E "s|<release version=\"[^\"]*\" date=\"[^\"]*\"|<release version=\"$VER\" date=\"$(date +%F)\"|" \
+            flatpak/io.github.nikolaj95o.dayzlin.metainfo.xml
+
+      # Always build (this is the dry-run validation). Sign into the OSTree repo and
+      # generate deltas only when publishing.
+      - name: Build (+ sign into the OSTree repo when publishing)
+        run: |
+          if [ "${{ inputs.publish }}" = "true" ]; then
+            flatpak-builder --user --force-clean \
+              --repo=site/repo --gpg-sign="$FLATPAK_GPG_KEYID" \
+              build-dir flatpak/io.github.nikolaj95o.dayzlin.yml
+            # The gh-pages deploy is a git checkout, which drops empty directories,
+            # so the restored OSTree repo is missing its empty refs/remotes dir.
+            # build-update-repo --generate-static-deltas lists refs/remotes and errors
+            # out without it ("opendir(refs/remotes): No such file or directory"), which
+            # breaks every incremental (non-first) release. Recreate it before updating.
+            mkdir -p site/repo/refs/remotes
+            flatpak build-update-repo \
+              --generate-static-deltas --prune \
+              --gpg-sign="$FLATPAK_GPG_KEYID" site/repo
+          else
+            flatpak-builder --user --force-clean \
+              build-dir flatpak/io.github.nikolaj95o.dayzlin.yml
+          fi
+
+      - name: Generate .flatpakrepo descriptor
+        if: ${{ inputs.publish }}
+        run: |
+          GPGKEY_B64=$(gpg --export "$FLATPAK_GPG_KEYID" | base64 -w0)
+          cat > site/dayzlin.flatpakrepo <<EOF
+          [Flatpak Repo]
+          Title=dayzlin
+          Url=https://nikolaj95o.github.io/dayzlin/repo/
+          Homepage=https://github.com/nikolaj95o/dayzlin
+          Comment=DayZ launcher for Linux
+          Description=Latest dayzlin builds
+          GPGKey=$GPGKEY_B64
+          EOF
+
+      - name: Deploy to GitHub Pages
+        if: ${{ inputs.publish }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          publish_branch: gh-pages

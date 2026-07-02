@@ -1,0 +1,50 @@
+name: Release publish
+
+# When a release/** PR merges into master, create the tag from the merged commit
+# and publish. The build already passed as a dry-run on the PR, so the tag is only
+# ever cut from a known-good commit — and never has to move.
+on:
+  pull_request:
+    types: [closed]
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: master
+          fetch-depth: 0
+      - id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Create + push tag (idempotent)
+        run: |
+          VER="${{ steps.v.outputs.version }}"
+          if git rev-parse "v$VER" >/dev/null 2>&1; then
+            echo "tag v$VER already exists — skipping"
+            exit 0
+          fi
+          git config user.name  github-actions
+          git config user.email github-actions@github.com
+          git tag "v$VER"
+          git push origin "v$VER"
+
+  # Tags pushed with GITHUB_TOKEN don't trigger release.yml, so no double publish —
+  # we publish inline here. Re-running this workflow after a flaky flatpak failure is
+  # safe: the tag guard above is idempotent, so it just re-publishes the same tag.
+  publish:
+    needs: tag
+    uses: ./.github/workflows/release-build.yml
+    with:
+      publish: true
+      version: ${{ needs.tag.outputs.version }}
+    secrets: inherit

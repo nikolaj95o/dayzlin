@@ -1,0 +1,37 @@
+name: Release PR (dry-run)
+
+# On a release/** PR, build the exact binary + flatpak artifacts WITHOUT publishing.
+# A green check here means the merge won't produce a broken release, so the tag
+# (created on merge by release-publish.yml) is only ever cut from a known-good commit.
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  version:
+    if: startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      # Cheap insurance: the 5 version files are hand-edited, so fail fast if any disagree.
+      - name: Check version files agree
+        run: |
+          VER="${{ steps.v.outputs.version }}"
+          fail=0
+          check() { if ! grep -qF "$2" "$1"; then echo "::error file=$1::expected $2"; fail=1; fi; }
+          check src-tauri/tauri.conf.json          "\"version\": \"$VER\""
+          check src-tauri/Cargo.toml               "version = \"$VER\""
+          check crates/dayz-core/Cargo.toml        "version = \"$VER\""
+          check flatpak/io.github.nikolaj95o.dayzlin.metainfo.xml "version=\"$VER\""
+          exit $fail
+
+  dry-run:
+    needs: version
+    uses: ./.github/workflows/release-build.yml
+    with:
+      publish: false
+      version: ${{ needs.version.outputs.version }}

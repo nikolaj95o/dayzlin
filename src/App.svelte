@@ -23,6 +23,7 @@
   import MessageDialog from "./lib/MessageDialog.svelte";
   import LaunchDialog from "./lib/LaunchDialog.svelte";
   import TitleBar from "./lib/TitleBar.svelte";
+  import WindowResizeHandles from "./lib/WindowResizeHandles.svelte";
   import Sidebar, { type View } from "./lib/Sidebar.svelte";
   import { showError } from "./lib/dialog";
   import { updateAvailable, refreshUpdateStatus } from "./lib/update.svelte";
@@ -264,4 +265,5 @@
 
   <MessageDialog />
   <LaunchDialog />
+  <WindowResizeHandles />
 </div>

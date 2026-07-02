@@ -50,7 +50,7 @@
           class="text-primary size-9 animate-spin motion-reduce:[animation-duration:2s]"
           aria-hidden="true"
         />
-        <Dialog.Title>
+        <Dialog.Title class="font-display tracking-wide uppercase">
           {#if $launch.phase === "preparing"}Preparing…
           {:else if $launch.phase === "downloading"}Downloading mods
           {:else if $launch.phase === "launching"}Launching game…

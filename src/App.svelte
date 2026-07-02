@@ -22,22 +22,13 @@
   import Settings from "./lib/Settings.svelte";
   import MessageDialog from "./lib/MessageDialog.svelte";
   import LaunchDialog from "./lib/LaunchDialog.svelte";
+  import TitleBar from "./lib/TitleBar.svelte";
+  import Sidebar, { type View } from "./lib/Sidebar.svelte";
   import { showError } from "./lib/dialog";
   import { updateAvailable, refreshUpdateStatus } from "./lib/update.svelte";
   import { startLaunch, setLaunch, closeLaunch } from "./lib/launch";
   import { Button } from "$lib/components/ui/button/index.js";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
-  import Minus from "@lucide/svelte/icons/minus";
-  import Square from "@lucide/svelte/icons/square";
-  import Copy from "@lucide/svelte/icons/copy";
-  import X from "@lucide/svelte/icons/x";
-
-  // Native decorations are disabled (tauri.conf.json) so we draw our own titlebar; the
-  // header below is the drag region and hosts the min/max/close controls.
-  const appWindow = getCurrentWindow();
-  let isMaximized = $state(false);
-
-  type View = "servers" | "favorites" | "history" | "mods" | "settings";
+  import RefreshCw from "@lucide/svelte/icons/refresh-cw";
 
   let view = $state<View>("servers");
   let servers = $state<Server[]>([]);
@@ -223,70 +214,51 @@
     const un = listen<LaunchProgress>("launch-progress", (e) => {
       setLaunch(e.payload);
     });
-    // Keep the maximize/restore icon in sync with the actual window state (maximizing via
-    // double-click on the drag region, keyboard, or the compositor all fire onResized).
-    appWindow.isMaximized().then((m) => (isMaximized = m));
-    const unResize = appWindow.onResized(() => {
-      appWindow.isMaximized().then((m) => (isMaximized = m));
-    });
     return () => {
       un.then((f) => f());
-      unResize.then((f) => f());
     };
   });
 </script>
 
-<!-- Full-width column so the custom titlebar (and its window controls) spans the whole window;
-     the body below stays centered in the max-w-6xl content column. -->
-<div class="flex h-screen flex-col">
-  <header data-tauri-drag-region class="flex items-center gap-4 px-4 pt-4 sm:px-5">
-    <h1 class="mt-2 mb-4 text-3xl font-semibold">dayzlin</h1>
-    <nav class="ml-auto flex gap-1.5">
-      <Button variant={view === "servers" ? "secondary" : "ghost"} size="sm" onclick={() => show("servers")}>Servers</Button>
-      <Button variant={view === "favorites" ? "secondary" : "ghost"} size="sm" onclick={() => show("favorites")}>Favorites</Button>
-      <Button variant={view === "history" ? "secondary" : "ghost"} size="sm" onclick={() => show("history")}>History</Button>
-      <Button variant={view === "mods" ? "secondary" : "ghost"} size="sm" onclick={() => show("mods")}>Mods</Button>
-      <Button variant={view === "settings" ? "secondary" : "ghost"} size="sm" onclick={() => show("settings")}>
-        Settings
-        {#if updateAvailable()}<span class="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-amber-500 align-middle" title="Update available"></span>{/if}
-      </Button>
-    </nav>
-    <div class="flex gap-1">
-      <Button variant="ghost" size="icon-sm" aria-label="Minimize" onclick={() => appWindow.minimize()}>
-        <Minus />
-      </Button>
-      <Button variant="ghost" size="icon-sm" aria-label={isMaximized ? "Restore" : "Maximize"} onclick={() => appWindow.toggleMaximize()}>
-        {#if isMaximized}<Copy />{:else}<Square />{/if}
-      </Button>
-      <Button variant="ghost" size="icon-sm" aria-label="Close" class="hover:bg-destructive hover:text-white" onclick={() => appWindow.close()}>
-        <X />
-      </Button>
-    </div>
-  </header>
+<!-- Shell: custom titlebar spans the top, then a sidebar + full-width content region. -->
+<div class="flex h-screen flex-col overflow-hidden">
+  <TitleBar />
 
-  <main class="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col box-border px-4 pb-12 sm:px-5">
-  <p class="text-muted-foreground my-2 font-mono text-sm">{status}</p>
+  <div class="flex min-h-0 flex-1">
+    <Sidebar {view} onSelect={show} updateAvailable={updateAvailable()} {status} />
 
-  <!-- Keep the Servers view mounted and hide it with CSS so switching tabs doesn't destroy and
-       rebuild the (virtualized) table — returning to it is instant and scroll position survives. -->
-  <div class="flex min-h-0 flex-1 flex-col" class:hidden={view !== "servers"}>
-    <div class="flex flex-wrap items-center gap-3">
-      <Button variant="outline" size="sm" onclick={() => load(true)}>Refresh</Button>
-      <FilterPanel bind:filter bind:query {mapOptions} onChange={applyFilters} />
-    </div>
-    <ServerTable {servers} {onSelect} {isFavorite} {onToggleFavorite} />
+    <main class="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <!-- Keep the Servers view mounted and hide it with CSS so switching tabs doesn't destroy and
+           rebuild the (virtualized) table — returning to it is instant and scroll position survives. -->
+      <div class="flex min-h-0 flex-1 flex-col px-5 pt-4 pb-3" class:hidden={view !== "servers"}>
+        <div class="mb-1 flex flex-wrap items-center gap-2.5">
+          <Button variant="outline" size="sm" onclick={() => load(true)}>
+            <RefreshCw /> Refresh
+          </Button>
+          <FilterPanel bind:filter bind:query {mapOptions} onChange={applyFilters} />
+        </div>
+        <ServerTable {servers} {onSelect} {isFavorite} {onToggleFavorite} />
+      </div>
+
+      {#if view === "settings"}
+        <div class="min-h-0 flex-1 overflow-auto px-5 py-5">
+          <Settings />
+        </div>
+      {:else if view === "favorites"}
+        <div class="flex min-h-0 flex-1 flex-col px-5 pt-4 pb-3">
+          <ServerTable servers={favoriteServers} {onSelect} {isFavorite} {onToggleFavorite} {isOffline} emptyLabel="No favorites yet" />
+        </div>
+      {:else if view === "history"}
+        <div class="flex min-h-0 flex-1 flex-col px-5 pt-4 pb-3">
+          <ServerTable servers={historyServers} {onSelect} {isFavorite} {onToggleFavorite} {isOffline} emptyLabel="No history yet" />
+        </div>
+      {:else if view === "mods"}
+        <div class="flex min-h-0 flex-1 flex-col px-5 pt-4 pb-3">
+          <ModsTable {mods} {favoriteCount} onDelete={onDeleteMod} emptyLabel="No installed mods" />
+        </div>
+      {/if}
+    </main>
   </div>
-
-  {#if view === "settings"}
-    <Settings />
-  {:else if view === "favorites"}
-    <ServerTable servers={favoriteServers} {onSelect} {isFavorite} {onToggleFavorite} {isOffline} emptyLabel="No favorites yet" />
-  {:else if view === "history"}
-    <ServerTable servers={historyServers} {onSelect} {isFavorite} {onToggleFavorite} {isOffline} emptyLabel="No history yet" />
-  {:else if view === "mods"}
-    <ModsTable {mods} {favoriteCount} onDelete={onDeleteMod} emptyLabel="No installed mods" />
-  {/if}
-  </main>
 
   <MessageDialog />
   <LaunchDialog />

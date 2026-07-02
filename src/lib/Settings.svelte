@@ -17,9 +17,19 @@
   import { Input } from "$lib/components/ui/input/index.js";
   import { Label } from "$lib/components/ui/label/index.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
-  import { Separator } from "$lib/components/ui/separator/index.js";
   import * as Card from "$lib/components/ui/card/index.js";
   import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
+  import type { Component } from "svelte";
+  import Check from "@lucide/svelte/icons/check";
+  import XIcon from "@lucide/svelte/icons/x";
+  import Palette from "@lucide/svelte/icons/palette";
+  import User from "@lucide/svelte/icons/user";
+  import HardDriveDownload from "@lucide/svelte/icons/hard-drive-download";
+  import Activity from "@lucide/svelte/icons/activity";
+  import ArrowUpCircle from "@lucide/svelte/icons/arrow-up-circle";
+  import Sun from "@lucide/svelte/icons/sun";
+  import Moon from "@lucide/svelte/icons/moon";
+  import Monitor from "@lucide/svelte/icons/monitor";
 
   let profile = $state<Profile | null>(null);
   let saved = $state(false);
@@ -151,184 +161,201 @@
   loadEnv();
 </script>
 
-{#if profile}
-  <Card.Root class="mt-3 max-w-md">
-    <Card.Content class="flex flex-col gap-4">
-      <div class="flex flex-col gap-1.5">
-        <Label>Theme</Label>
-        <ToggleGroup.Root
-          type="single"
-          variant="outline"
-          value={theme.pref}
-          onValueChange={(v) => v && setTheme(v as ThemePref)}
-        >
-          <ToggleGroup.Item value="light">Light</ToggleGroup.Item>
-          <ToggleGroup.Item value="dark">Dark</ToggleGroup.Item>
-          <ToggleGroup.Item value="system">System</ToggleGroup.Item>
-        </ToggleGroup.Root>
-      </div>
+{#snippet sectionHead(Icon: Component, title: string)}
+  <div class="flex items-center gap-2">
+    <Icon class="text-primary size-4" />
+    <h3 class="font-display text-xs font-semibold tracking-wider uppercase">{title}</h3>
+  </div>
+{/snippet}
 
-      <Separator />
-
-      <div class="flex flex-col gap-1.5">
-        <Label for="player">Player name</Label>
-        <Input id="player" bind:value={profile.player} placeholder="survivor" />
-      </div>
-
-      <div class="flex flex-col gap-1.5">
-        <Label for="steam-root">DayZ install location</Label>
-        <div class="flex gap-2">
-          <Input
-            id="steam-root"
-            class="flex-1"
-            bind:value={profile.steam_root}
-            placeholder="auto-detect (e.g. /mnt/FAST/SteamLibrary)"
-          />
-          <Button variant="outline" type="button" onclick={() => browseDayz()}>Browse…</Button>
-        </div>
-        <span class="text-muted-foreground text-xs">
-          Folder containing <code>steamapps</code>. Leave blank to detect automatically from
-          your Steam libraries.
-        </span>
-        {#if isPortalPath(profile.steam_root) && steamDisplay}
-          <span class="text-muted-foreground text-xs">
-            Granted via the file portal → <code class="break-all">{steamDisplay}</code>
-          </span>
-        {/if}
-      </div>
-
-      <div class="flex items-center gap-2.5">
-        <Button onclick={saveP}>Save</Button>
-        {#if saved}<Badge variant="secondary">Saved ✓</Badge>{/if}
-      </div>
-
-      <Separator />
-
-      <p class="text-muted-foreground text-sm">
-        Mods download through the running Steam client — no SteamCMD, no separate login.
-        Just keep Steam open and logged in when you Play.
-      </p>
-      <div class="flex flex-col gap-1.5">
-        <div class="flex items-center gap-2.5">
-          <Button variant="outline" type="button" onclick={cleanup} disabled={cleaning}>
-            {cleaning ? "Cleaning…" : "Clean up leftover mod downloads"}
-          </Button>
-          {#if cleanupMsg}<span class="text-primary text-sm">{cleanupMsg}</span>{/if}
-        </div>
-        <span class="text-muted-foreground text-xs">
-          Removes partial mod downloads left by a cancelled launch so Steam stops re-downloading
-          them. Close Steam first — it must be shut down for cleanup to take effect.
-        </span>
-      </div>
-
-      <Separator />
-
-      <h3 class="text-sm font-medium">Diagnostics</h3>
-      {#if env}
-        <div class="flex flex-col gap-2 text-sm">
-          <div class="flex items-baseline gap-2.5">
-            <span class="text-muted-foreground w-32 shrink-0">App version</span>
-            <span class="break-all">{env.app_version}</span>
-            {#if st?.update_available}
-              <span class="text-amber-600 dark:text-amber-400 text-xs">● update available</span>
-            {/if}
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <div class="flex items-center gap-2.5">
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                onclick={checkUpdates}
-                disabled={checking || updating}
-              >
-                {checking ? "Checking…" : "Check for updates"}
-              </Button>
-              {#if st?.update_available}
-                <span class="text-sm">
-                  Update available: {st.current_version} → {st.latest_version}
-                </span>
-              {:else if updateMsg}
-                <span class="text-muted-foreground text-sm">{updateMsg}</span>
-              {/if}
-            </div>
-            {#if st?.update_available}
-              {#if st.apply_supported}
-                <div class="flex items-center gap-2.5">
-                  <Button size="sm" type="button" onclick={applyUpdate} disabled={updating}>
-                    {updating
-                      ? st.backend === "flatpak"
-                        ? "Updating…"
-                        : "Downloading…"
-                      : "Update & restart"}
-                  </Button>
-                  <span class="text-muted-foreground text-xs">
-                    {st.backend === "flatpak"
-                      ? "Installs the update via Flatpak and restarts dayzlin."
-                      : "Downloads the new AppImage, verifies its signature, and restarts dayzlin."}
-                  </span>
-                </div>
-              {:else}
-                <span class="text-muted-foreground text-xs">
-                  This build can't update itself — download the latest release from
-                  <code class="break-all">github.com/nikolaj95o/dayzlin/releases/latest</code>.
-                </span>
-              {/if}
-            {/if}
-          </div>
-          <div class="flex items-baseline gap-2.5">
-            <span class="text-muted-foreground w-32 shrink-0">Steam running</span>
-            {#if env.steam_running}
-              <span class="break-all text-green-600 dark:text-green-400">✓ running</span>
-            {:else}
-              <span class="break-all text-red-600 dark:text-red-400">✗ not running — open Steam and log in to download mods</span>
-            {/if}
-          </div>
-          <div class="flex items-baseline gap-2.5">
-            <span class="text-muted-foreground w-32 shrink-0">Steam install</span>
-            {#if env.steam_found}
-              <span class="break-all text-green-600 dark:text-green-400">✓ {env.steam_root} ({env.steam_kind})</span>
-            {:else}
-              <span class="break-all text-red-600 dark:text-red-400">✗ not found</span>
-            {/if}
-          </div>
-          <div class="flex items-baseline gap-2.5">
-            <span class="text-muted-foreground w-32 shrink-0">DayZ installed</span>
-            {#if env.dayz_installed}
-              <span class="break-all text-green-600 dark:text-green-400">✓ {env.dayz_path}</span>
-            {:else}
-              <span class="break-all text-red-600 dark:text-red-400">
-                ✗ not found — set the DayZ install location above, or restart Steam with the
-                drive mounted
-              </span>
-            {/if}
-          </div>
-          {#if !env.dayz_installed && env.dayz_library_hint}
-            <div class="flex flex-col gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                onclick={() => browseDayz(env!.dayz_library_hint!)}
-              >
-                Grant access to {env.dayz_library_hint}
-              </Button>
-              <span class="text-muted-foreground text-xs">
-                Steam has DayZ here, but it's on a drive this app can't read until you grant
-                access. Click to pick that folder in the file chooser.
-              </span>
-            </div>
-          {/if}
-          {#if env.dayz_version}
-            <div class="flex items-baseline gap-2.5">
-              <span class="text-muted-foreground w-32 shrink-0">DayZ version</span>
-              <span class="break-all text-green-600 dark:text-green-400">{env.dayz_version}</span>
-            </div>
-          {/if}
-        </div>
+{#snippet statusRow(label: string, ok: boolean, value: string)}
+  <div class="flex items-baseline gap-3">
+    <span class="text-muted-foreground w-28 shrink-0 text-sm">{label}</span>
+    <span class="inline-flex min-w-0 items-baseline gap-1.5 text-sm">
+      {#if ok}
+        <Check class="text-online size-4 shrink-0 translate-y-0.5" />
       {:else}
-        <p class="text-muted-foreground text-sm">Checking environment…</p>
+        <XIcon class="text-destructive size-4 shrink-0 translate-y-0.5" />
       {/if}
-    </Card.Content>
-  </Card.Root>
+      <span class="{ok ? '' : 'text-destructive'} break-all">{value}</span>
+    </span>
+  </div>
+{/snippet}
+
+{#if profile}
+  <div class="mx-auto flex max-w-xl flex-col gap-4">
+    <Card.Root>
+      <Card.Content class="flex flex-col gap-3">
+        {@render sectionHead(Palette, "Appearance")}
+        <div class="flex flex-col gap-1.5">
+          <Label class="text-muted-foreground text-xs">Theme</Label>
+          <ToggleGroup.Root
+            type="single"
+            variant="outline"
+            value={theme.pref}
+            onValueChange={(v) => v && setTheme(v as ThemePref)}
+          >
+            <ToggleGroup.Item value="light"><Sun class="size-3.5" /> Light</ToggleGroup.Item>
+            <ToggleGroup.Item value="dark"><Moon class="size-3.5" /> Dark</ToggleGroup.Item>
+            <ToggleGroup.Item value="system"><Monitor class="size-3.5" /> System</ToggleGroup.Item>
+          </ToggleGroup.Root>
+        </div>
+      </Card.Content>
+    </Card.Root>
+
+    <Card.Root>
+      <Card.Content class="flex flex-col gap-4">
+        {@render sectionHead(User, "Profile")}
+        <div class="flex flex-col gap-1.5">
+          <Label for="player" class="text-muted-foreground text-xs">Player name</Label>
+          <Input id="player" bind:value={profile.player} placeholder="survivor" />
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <Label for="steam-root" class="text-muted-foreground text-xs">DayZ install location</Label>
+          <div class="flex gap-2">
+            <Input
+              id="steam-root"
+              class="flex-1 font-mono text-xs"
+              bind:value={profile.steam_root}
+              placeholder="auto-detect (e.g. /mnt/FAST/SteamLibrary)"
+            />
+            <Button variant="outline" type="button" onclick={() => browseDayz()}>Browse…</Button>
+          </div>
+          <span class="text-muted-foreground text-xs">
+            Folder containing <code>steamapps</code>. Leave blank to detect automatically from
+            your Steam libraries.
+          </span>
+          {#if isPortalPath(profile.steam_root) && steamDisplay}
+            <span class="text-muted-foreground text-xs">
+              Granted via the file portal → <code class="break-all">{steamDisplay}</code>
+            </span>
+          {/if}
+        </div>
+
+        <div class="flex items-center gap-2.5">
+          <Button onclick={saveP}>Save</Button>
+          {#if saved}<Badge variant="online">Saved ✓</Badge>{/if}
+        </div>
+      </Card.Content>
+    </Card.Root>
+
+    <Card.Root>
+      <Card.Content class="flex flex-col gap-3">
+        {@render sectionHead(HardDriveDownload, "Downloads")}
+        <p class="text-muted-foreground text-sm">
+          Mods download through the running Steam client — no SteamCMD, no separate login.
+          Just keep Steam open and logged in when you Play.
+        </p>
+        <div class="flex flex-col gap-1.5">
+          <div class="flex flex-wrap items-center gap-2.5">
+            <Button variant="outline" type="button" onclick={cleanup} disabled={cleaning}>
+              {cleaning ? "Cleaning…" : "Clean up leftover mod downloads"}
+            </Button>
+            {#if cleanupMsg}<span class="text-primary text-sm">{cleanupMsg}</span>{/if}
+          </div>
+          <span class="text-muted-foreground text-xs">
+            Removes partial mod downloads left by a cancelled launch so Steam stops re-downloading
+            them. Close Steam first — it must be shut down for cleanup to take effect.
+          </span>
+        </div>
+      </Card.Content>
+    </Card.Root>
+
+    <Card.Root>
+      <Card.Content class="flex flex-col gap-3">
+        {@render sectionHead(ArrowUpCircle, "Updates")}
+        <div class="flex items-baseline gap-3">
+          <span class="text-muted-foreground w-28 shrink-0 text-sm">App version</span>
+          <span class="font-mono text-sm break-all">{env?.app_version ?? "…"}</span>
+          {#if st?.update_available}<span class="text-warn text-xs">● update available</span>{/if}
+        </div>
+        <div class="flex flex-col gap-2">
+          <div class="flex flex-wrap items-center gap-2.5">
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onclick={checkUpdates}
+              disabled={checking || updating}
+            >
+              {checking ? "Checking…" : "Check for updates"}
+            </Button>
+            {#if st?.update_available}
+              <span class="text-sm">Update available: {st.current_version} → {st.latest_version}</span>
+            {:else if updateMsg}
+              <span class="text-muted-foreground text-sm">{updateMsg}</span>
+            {/if}
+          </div>
+          {#if st?.update_available}
+            {#if st.apply_supported}
+              <div class="flex flex-wrap items-center gap-2.5">
+                <Button variant="accent" size="sm" type="button" onclick={applyUpdate} disabled={updating}>
+                  {updating ? (st.backend === "flatpak" ? "Updating…" : "Downloading…") : "Update & restart"}
+                </Button>
+                <span class="text-muted-foreground text-xs">
+                  {st.backend === "flatpak"
+                    ? "Installs the update via Flatpak and restarts dayzlin."
+                    : "Downloads the new AppImage, verifies its signature, and restarts dayzlin."}
+                </span>
+              </div>
+            {:else}
+              <span class="text-muted-foreground text-xs">
+                This build can't update itself — download the latest release from
+                <code class="break-all">github.com/nikolaj95o/dayzlin/releases/latest</code>.
+              </span>
+            {/if}
+          {/if}
+        </div>
+      </Card.Content>
+    </Card.Root>
+
+    <Card.Root>
+      <Card.Content class="flex flex-col gap-3">
+        {@render sectionHead(Activity, "Diagnostics")}
+        {#if env}
+          <div class="flex flex-col gap-2.5">
+            {@render statusRow(
+              "Steam running",
+              env.steam_running,
+              env.steam_running ? "running" : "not running — open Steam and log in to download mods",
+            )}
+            {@render statusRow(
+              "Steam install",
+              env.steam_found,
+              env.steam_found ? `${env.steam_root} (${env.steam_kind})` : "not found",
+            )}
+            {@render statusRow(
+              "DayZ installed",
+              env.dayz_installed,
+              env.dayz_installed
+                ? (env.dayz_path ?? "installed")
+                : "not found — set the DayZ install location above, or restart Steam with the drive mounted",
+            )}
+            {#if !env.dayz_installed && env.dayz_library_hint}
+              <div class="flex flex-col gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onclick={() => browseDayz(env!.dayz_library_hint!)}
+                >
+                  Grant access to {env.dayz_library_hint}
+                </Button>
+                <span class="text-muted-foreground text-xs">
+                  Steam has DayZ here, but it's on a drive this app can't read until you grant
+                  access. Click to pick that folder in the file chooser.
+                </span>
+              </div>
+            {/if}
+            {#if env.dayz_version}
+              {@render statusRow("DayZ version", true, env.dayz_version)}
+            {/if}
+          </div>
+        {:else}
+          <p class="text-muted-foreground text-sm">Checking environment…</p>
+        {/if}
+      </Card.Content>
+    </Card.Root>
+  </div>
 {/if}

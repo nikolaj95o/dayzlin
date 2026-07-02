@@ -6,6 +6,10 @@
   import ExternalLink from "@lucide/svelte/icons/external-link";
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import Trash2 from "@lucide/svelte/icons/trash-2";
+  import Star from "@lucide/svelte/icons/star";
+  import ChevronUp from "@lucide/svelte/icons/chevron-up";
+  import ChevronDown from "@lucide/svelte/icons/chevron-down";
+  import X from "@lucide/svelte/icons/x";
 
   let {
     mods = [],
@@ -113,27 +117,32 @@
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col">
-  <p class="text-muted-foreground my-2 text-sm">
-    {mods.length} mod{mods.length === 1 ? "" : "s"} · {formatBytes(totalSize)}
+  <p class="text-muted-foreground mb-1 font-mono text-xs">
+    {mods.length} mod{mods.length === 1 ? "" : "s"} · {formatBytes(totalSize)} on disk
   </p>
-  <div class="min-h-0 flex-1 overflow-auto">
+  <div class="border-border bg-card/40 mt-1 min-h-0 flex-1 overflow-auto rounded-lg border">
     <table class="w-full border-collapse text-sm">
       <thead>
         <tr>
           {#each columns as col}
             {@const info = sortInfo(col.key)}
-            <th class="border-border bg-background text-foreground sticky top-0 border-b p-0 text-left font-semibold" aria-sort={info ? (info.dir === "asc" ? "ascending" : "descending") : "none"}>
-              <button class="text-foreground flex w-full cursor-pointer items-center gap-1 px-2.5 py-2 text-left font-[inherit]" onclick={() => toggleSort(col.key)}>
-                {col.label}
-                <span class="inline-block w-[0.9em] text-[0.7em] leading-none">{info ? (info.dir === "asc" ? "▲" : "▼") : ""}</span>
-                {#if info && sortChain.length > 1}<span class="text-primary text-[0.7em] leading-none">{info.pos}</span>{/if}
+            <th class="border-border bg-card sticky top-0 z-10 border-b p-0 text-left" aria-sort={info ? (info.dir === "asc" ? "ascending" : "descending") : "none"}>
+              <button
+                class="hover:text-foreground flex w-full cursor-pointer items-center gap-1 px-3 py-2.5 text-left transition-colors {info ? 'text-primary' : 'text-muted-foreground'}"
+                onclick={() => toggleSort(col.key)}
+              >
+                <span class="font-display text-[11px] font-semibold tracking-wider uppercase">{col.label}</span>
+                <span class="inline-flex w-3 justify-center">
+                  {#if info}{#if info.dir === "asc"}<ChevronUp class="size-3" />{:else}<ChevronDown class="size-3" />{/if}{/if}
+                </span>
+                {#if info && sortChain.length > 1}<span class="text-primary text-[10px] font-bold leading-none">{info.pos}</span>{/if}
               </button>
             </th>
           {/each}
-          <th class="border-border bg-background sticky top-0 border-b px-2 py-1 text-right">
+          <th class="border-border bg-card sticky top-0 z-10 border-b px-2 py-1 text-right">
             {#if sortChain.length > 0}
               <Button variant="ghost" size="icon-xs" title="Clear sorting" aria-label="Clear sorting" onclick={() => (sortChain = [])}>
-                <span aria-hidden="true">✕</span>
+                <X />
               </Button>
             {/if}
           </th>
@@ -141,22 +150,27 @@
       </thead>
       <tbody>
         {#if sorted.length === 0}
-          <tr><td colspan="5" class="text-muted-foreground p-6 text-center">{emptyLabel}</td></tr>
+          <tr><td colspan="5" class="text-muted-foreground p-10 text-center">{emptyLabel}</td></tr>
         {:else}
           {#each sorted as m (m.workshop_id)}
-            <tr class="hover:bg-muted box-border h-11">
-              <td class="border-border text-foreground max-w-[420px] overflow-hidden border-b px-2.5 py-[7px] font-medium text-ellipsis whitespace-nowrap">{m.name}</td>
-              <td class="border-border border-b px-2.5 py-[7px] whitespace-nowrap">{formatDate(m.last_used)}</td>
-              <td class="border-border border-b px-2.5 py-[7px]">{favoriteCount(m.workshop_id)}</td>
-              <td class="border-border border-b px-2.5 py-[7px] whitespace-nowrap">{formatBytes(m.size_bytes)}</td>
-              <td class="border-border flex items-center justify-end gap-1.5 border-b px-2.5 py-[7px] whitespace-nowrap">
+            <tr class="hover:bg-accent/60 box-border h-12 transition-colors">
+              <td class="border-border text-foreground max-w-[420px] overflow-hidden border-b px-3 py-2 font-medium text-ellipsis whitespace-nowrap">{m.name}</td>
+              <td class="border-border text-muted-foreground border-b px-3 py-2 font-mono text-xs whitespace-nowrap">{formatDate(m.last_used)}</td>
+              <td class="border-border border-b px-3 py-2">
+                <span class="text-muted-foreground inline-flex items-center gap-1.5">
+                  <Star class="size-3.5" />
+                  <span class="text-foreground font-mono text-xs tabular-nums">{favoriteCount(m.workshop_id)}</span>
+                </span>
+              </td>
+              <td class="border-border text-foreground border-b px-3 py-2 font-mono text-xs tabular-nums whitespace-nowrap">{formatBytes(m.size_bytes)}</td>
+              <td class="border-border flex h-12 items-center justify-end gap-1.5 border-b px-3 py-2 whitespace-nowrap">
                 <Button variant="outline" size="icon-sm" title="Open Steam Workshop page" aria-label="Open Steam Workshop page" onclick={() => openWorkshop(m)}>
                   <ExternalLink />
                 </Button>
                 <Button variant="outline" size="icon-sm" title="Open mod folder" aria-label="Open mod folder" onclick={() => openFolder(m)}>
                   <FolderOpen />
                 </Button>
-                <Button variant="outline" size="icon-sm" title="Delete mod" aria-label="Delete mod" onclick={() => (pendingDelete = m)}>
+                <Button variant="destructive" size="icon-sm" title="Delete mod" aria-label="Delete mod" onclick={() => (pendingDelete = m)}>
                   <Trash2 />
                 </Button>
               </td>
